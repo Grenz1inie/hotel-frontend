@@ -1,11 +1,10 @@
 import React from 'react';
-import { Card, Row, Col, Tag, Typography, Space, Input, Empty, Skeleton, Button } from 'antd';
+import { Card, Row, Col, Tag, Typography, Space, Input, Empty, Skeleton, Button, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { getRooms, getImageList } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const { Title, Text } = Typography;
-
-import { useAuth } from '../context/AuthContext';
 
 export default function RoomList({ onOpen }) {
   const [rooms, setRooms] = React.useState([]);
@@ -32,10 +31,13 @@ export default function RoomList({ onOpen }) {
   const list = React.useMemo(() => {
     if (!q) return rooms;
     const key = q.toLowerCase();
-    return rooms.filter(r =>
-      (r.name || '').toLowerCase().includes(key) ||
-      (r.type || '').toLowerCase().includes(key)
-    );
+    return rooms.filter(r => {
+      const name = (r.name || '').toLowerCase();
+      const type = (r.type || '').toLowerCase();
+      const bed = (r.bedType || '').toLowerCase();
+      const amenities = Array.isArray(r.amenities) ? r.amenities.join(',').toLowerCase() : '';
+      return name.includes(key) || type.includes(key) || bed.includes(key) || amenities.includes(key);
+    });
   }, [rooms, q]);
 
   return (
@@ -74,8 +76,15 @@ export default function RoomList({ onOpen }) {
           {list.map(r => {
             const imgs = getImageList(r.images);
             const cover = imgs[0] || 'https://picsum.photos/seed/hotel/400/250';
-            const available = Number(r.availableCount || 0);
-            const total = Number(r.totalCount || 0);
+            const available = Number.isFinite(Number(r.availableCount)) ? Number(r.availableCount) : 0;
+            const total = Number.isFinite(Number(r.totalCount)) ? Number(r.totalCount) : 0;
+            const price = Number(r.pricePerNight);
+            const amenities = Array.isArray(r.amenities) ? r.amenities.slice(0, 3) : [];
+            const isActive = r.isActive !== undefined ? !!r.isActive : true;
+            const areaValue = Number(r.areaSqm);
+            const areaDisplay = Number.isNaN(areaValue) ? null : Number.isInteger(areaValue) ? areaValue : areaValue.toFixed(1);
+            const maxGuestsValue = Number(r.maxGuests);
+            const maxGuests = Number.isNaN(maxGuestsValue) || maxGuestsValue <= 0 ? (r.maxGuests ?? '—') : maxGuestsValue;
             return (
               <Col xs={24} sm={12} md={8} lg={6} key={r.id}>
                 <Card
@@ -87,11 +96,23 @@ export default function RoomList({ onOpen }) {
                     <Title level={5} style={{ margin: 0 }}>{r.name}</Title>
                     <Space size={8} wrap>
                       <Tag color="blue">{r.type}</Tag>
-                      <Tag color={available > 0 ? 'green' : 'red'}>
-                        {available}/{total} 可用
-                      </Tag>
+                      <Tag color={available > 0 ? 'green' : 'red'}>{available}/{total} 可用</Tag>
+                      {!isActive && <Tag color="magenta">已下架</Tag>}
                     </Space>
-                    <Text type="secondary">¥{r.pricePerNight} / 晚</Text>
+                    <Text type="secondary">¥{Number.isNaN(price) ? r.pricePerNight : price.toFixed(2)} / 晚 · 最多 {maxGuests ?? '—'} 人</Text>
+                    <Text type="secondary">{areaDisplay != null ? `${areaDisplay} ㎡` : '面积未知'} · {r.bedType || '床型未设置'}</Text>
+                    {amenities.length > 0 && (
+                      <Space size={[4, 4]} wrap>
+                        {amenities.map((am, idx) => (
+                          <Tooltip key={idx} title={am}>
+                            <Tag color="geekblue">{am}</Tag>
+                          </Tooltip>
+                        ))}
+                        {Array.isArray(r.amenities) && r.amenities.length > amenities.length && (
+                          <Tag color="default">+{r.amenities.length - amenities.length}</Tag>
+                        )}
+                      </Space>
+                    )}
                   </Space>
                 </Card>
               </Col>

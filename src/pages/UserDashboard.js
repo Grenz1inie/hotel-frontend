@@ -7,6 +7,15 @@ import { useNavigate } from 'react-router-dom';
 
 const { Title } = Typography;
 
+const STATUS_COLORS = {
+  PENDING: 'gold',
+  CONFIRMED: 'green',
+  CHECKED_IN: 'cyan',
+  CHECKED_OUT: 'blue',
+  CANCELLED: 'red',
+  REFUNDED: 'purple',
+};
+
 export default function UserDashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = React.useState(false);
@@ -21,7 +30,6 @@ export default function UserDashboard() {
     try {
       setLoading(true);
       const res = await getBookingsByUser(effectiveUserId, { page, size });
-      // 后端返回 { items, page, size, total }
       if (Array.isArray(res)) {
         setData({ items: res, page, size, total: res.length });
       } else {
@@ -50,11 +58,17 @@ export default function UserDashboard() {
 
   const columns = [
     { title: '订单ID', dataIndex: 'id', key: 'id', width: 90 },
-    { title: '房型ID', dataIndex: 'roomId', key: 'roomId', width: 90 },
+    { title: '酒店ID', dataIndex: 'hotelId', key: 'hotelId', width: 90 },
+    { title: '房型ID', dataIndex: 'roomTypeId', key: 'roomTypeId', width: 90, render: (v, record) => v ?? record.roomId },
+    { title: '房间ID', dataIndex: 'roomId', key: 'roomId', width: 90 },
+    { title: '入住人数', dataIndex: 'guests', key: 'guests', width: 100, render: v => v ?? '—' },
     { title: '开始', dataIndex: 'startTime', key: 'startTime', render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-' },
     { title: '结束', dataIndex: 'endTime', key: 'endTime', render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-' },
     { title: '金额', dataIndex: 'amount', key: 'amount', render: v => v != null ? `¥${v}` : '-' },
-    { title: '状态', dataIndex: 'status', key: 'status', render: s => <Tag color={s === 'CANCELLED' ? 'red' : s === 'CONFIRMED' ? 'green' : 'blue'}>{s}</Tag> },
+    { title: '联系人', dataIndex: 'contactName', key: 'contactName', render: v => v || '—' },
+    { title: '电话', dataIndex: 'contactPhone', key: 'contactPhone', render: v => v || '—' },
+    { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true, render: v => v || '—' },
+    { title: '状态', dataIndex: 'status', key: 'status', render: s => <Tag color={STATUS_COLORS[s] || 'default'}>{s}</Tag> },
     {
       title: '操作', key: 'action', width: 160,
       render: (_, record) => (

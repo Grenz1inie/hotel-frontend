@@ -19,12 +19,50 @@ export default function AntLayout({ children }) {
   }, [location.pathname, isAuthPage]);
 
   const crumbs = React.useMemo(() => {
-    // 移除“首页”
-    if (location.pathname === '/') return [];
-    if (location.pathname.startsWith('/rooms/')) return [{ title: '房间详情' }];
-    if (location.pathname.startsWith('/me/bookings')) return [{ title: '我的订单' }];
-    if (location.pathname.startsWith('/admin')) return [{ title: '管理' }];
-    return [];
+    const base = [{ key: 'home', title: <Link to="/">首页</Link> }];
+    const path = location.pathname;
+
+    if (path === '/') {
+      return base;
+    }
+
+    if (path === '/login') {
+      return [
+        ...base,
+        { key: 'login', title: <Link to="/login">登录</Link> },
+      ];
+    }
+
+    if (path === '/error') {
+      return [
+        ...base,
+        { key: 'error', title: <Link to="/error">错误</Link> },
+      ];
+    }
+
+    if (path.startsWith('/rooms/')) {
+      return [
+        ...base,
+        { key: 'rooms', title: <Link to="/">房间列表</Link> },
+        { key: 'room-detail', title: <Link to={path}>房间详情</Link> },
+      ];
+    }
+
+    if (path.startsWith('/me/bookings')) {
+      return [
+        ...base,
+        { key: 'my-bookings', title: <Link to="/me/bookings">我的订单</Link> },
+      ];
+    }
+
+    if (path.startsWith('/admin')) {
+      return [
+        ...base,
+        { key: 'admin', title: <Link to="/admin">管理控制台</Link> },
+      ];
+    }
+
+    return base;
   }, [location.pathname]);
 
   return (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, DatePicker, message } from 'antd';
+import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, DatePicker, message, Tag, Input } from 'antd';
 import dayjs from 'dayjs';
 import { getRoomById, getImageList, createBooking, getRoomAvailability } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -11,6 +11,7 @@ export default function RoomDetail({ id, onBack }) {
   const [room, setRoom] = React.useState(null);
   const [loading, setLoading] = React.useState(false);
   const [bookingLoading, setBookingLoading] = React.useState(false);
+  const [form] = Form.useForm();
   const { user } = useAuth();
   const navigate = useNavigate();
 
@@ -20,13 +21,24 @@ export default function RoomDetail({ id, onBack }) {
       setLoading(true);
       const data = await getRoomById(id);
       setRoom(data);
+      if (data) {
+        const guestLimit = Number(data.maxGuests);
+        const defaultGuests = Number.isNaN(guestLimit) || guestLimit <= 0 ? 1 : Math.min(guestLimit, 2);
+        form.setFieldsValue({
+          range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
+          guests: defaultGuests,
+          contactName: user?.username || '',
+          contactPhone: '',
+          remark: ''
+        });
+      }
     } catch (e) {
       console.error(e);
       navigate('/error', { state: { status: '500', title: '加载失败', subTitle: '无法连接后端', backTo: '/' }, replace: true });
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id, navigate, form, user]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -55,11 +67,29 @@ export default function RoomDetail({ id, onBack }) {
       }
       const isAdmin = user?.role === 'ADMIN';
       const uid = isAdmin ? (vals.userId || user?.id) : user?.id;
-      const data = await createBooking({ roomId: id, userId: isAdmin ? uid : undefined, start, end });
+      const payload = {
+        roomId: id,
+        userId: isAdmin ? uid : undefined,
+        start,
+        end,
+        guests: vals.guests,
+        contactName: vals.contactName,
+        contactPhone: vals.contactPhone,
+        remark: vals.remark,
+      };
+      const data = await createBooking(payload);
       if (!data) {
         message.error('预订失败，可能无可用房间');
       } else {
         message.success(`预订成功，状态: ${data.status}`);
+        form.resetFields();
+        form.setFieldsValue({
+          range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
+          guests: maxGuestsLimit ? Math.min(maxGuestsLimit, 2) : 1,
+          contactName: user?.username || '',
+          contactPhone: '',
+          remark: ''
+        });
         load();
       }
     } catch (e) {
@@ -73,12 +103,23 @@ export default function RoomDetail({ id, onBack }) {
 
   if (!room) return <Text type="secondary">{loading ? '加载中…' : '未找到房间'}</Text>;
   const images = getImageList(room.images);
+  const amenities = Array.isArray(room.amenities) ? room.amenities : [];
+  const isActive = room.isActive !== undefined ? !!room.isActive : true;
+  const priceValue = Number(room.pricePerNight);
+  const priceDisplay = Number.isNaN(priceValue) ? room.pricePerNight : priceValue.toFixed(2);
+  const maxGuestsValue = Number(room.maxGuests);
+  const maxGuestsDisplay = Number.isNaN(maxGuestsValue) || maxGuestsValue <= 0 ? room.maxGuests ?? '—' : maxGuestsValue;
+  const maxGuestsLimit = Number.isNaN(maxGuestsValue) || maxGuestsValue <= 0 ? undefined : maxGuestsValue;
+  const defaultGuestCount = maxGuestsLimit ? Math.min(maxGuestsLimit, 2) : 1;
+  const totalCountValue = Number(room.totalCount);
+  const availableCountValue = Number(room.availableCount);
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>
       <Space>
         <Button onClick={onBack}>返回</Button>
         <Title level={3} style={{ margin: 0 }}>{room.name} · {room.type}</Title>
+        {!isActive && <Tag color="magenta">当前不可售</Tag>}
       </Space>
       <Image.PreviewGroup>
         <Space wrap>
@@ -87,12 +128,24 @@ export default function RoomDetail({ id, onBack }) {
           )) : <Text type="secondary">暂无图片</Text>}
         </Space>
       </Image.PreviewGroup>
-      <Descriptions bordered column={1} size="small">
-        <Descriptions.Item label="描述">
+      <Descriptions bordered column={2} size="small">
+        <Descriptions.Item label="描述" span={2}>
           <Paragraph style={{ margin: 0 }}>{room.description || '—'}</Paragraph>
         </Descriptions.Item>
-        <Descriptions.Item label="价格">¥{room.pricePerNight} / 晚</Descriptions.Item>
-        <Descriptions.Item label="库存">{room.availableCount}/{room.totalCount}</Descriptions.Item>
+  <Descriptions.Item label="价格">¥{priceDisplay} / 晚</Descriptions.Item>
+  <Descriptions.Item label="库存">{Number.isNaN(availableCountValue) ? room.availableCount : availableCountValue}/{Number.isNaN(totalCountValue) ? room.totalCount : totalCountValue}</Descriptions.Item>
+  <Descriptions.Item label="最大入住">{maxGuestsDisplay} 人</Descriptions.Item>
+        <Descriptions.Item label="面积">{room.areaSqm ? `${room.areaSqm} ㎡` : '—'}</Descriptions.Item>
+        <Descriptions.Item label="床型">{room.bedType || '—'}</Descriptions.Item>
+        <Descriptions.Item label="酒店ID">{room.hotelId ?? '—'}</Descriptions.Item>
+        <Descriptions.Item label="状态">{isActive ? '可售' : '下架'}</Descriptions.Item>
+        <Descriptions.Item label="设施" span={2}>
+          {amenities.length ? (
+            <Space wrap>
+              {amenities.map((am, idx) => <Tag key={idx}>{am}</Tag>)}
+            </Space>
+          ) : '—'}
+        </Descriptions.Item>
       </Descriptions>
 
       <Title level={4}>预订</Title>
@@ -110,16 +163,37 @@ export default function RoomDetail({ id, onBack }) {
       )}
       {user && user.role !== 'ADMIN' && (
         <Form
-          layout="inline"
+          form={form}
+          layout="vertical"
           onFinish={onFinish}
-          initialValues={{ userId: user?.id || 2, range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)] }}
+          initialValues={{
+            range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
+            guests: defaultGuestCount,
+            contactName: user?.username || '',
+            contactPhone: '',
+            remark: ''
+          }}
         >
-          <Form.Item name="range" label="开始/结束时间" rules={[{ required: true, message: '请选择时间范围' }]}>
-            <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm:ss" />
-          </Form.Item>
-          <Form.Item>
-            <Button type="primary" htmlType="submit" loading={bookingLoading} disabled={Number(room.availableCount) <= 0}>立即预订</Button>
-          </Form.Item>
+          <Space direction="vertical" style={{ width: '100%' }}>
+            <Form.Item name="range" label="开始/结束时间" rules={[{ required: true, message: '请选择时间范围' }]}>
+              <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm:ss" style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="guests" label="入住人数" rules={[{ required: true, message: '请输入人数' }]}>
+              <InputNumber min={1} max={maxGuestsLimit || 10} style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="contactName" label="联系人姓名" rules={[{ required: true, message: '请输入联系人姓名' }]}>
+              <Input placeholder="请输入联系人姓名" />
+            </Form.Item>
+            <Form.Item name="contactPhone" label="联系电话" rules={[{ required: true, message: '请输入联系电话' }]}>
+              <Input placeholder="请输入联系电话" />
+            </Form.Item>
+            <Form.Item name="remark" label="备注">
+              <Input.TextArea rows={3} placeholder="可选，填写特殊需求" />
+            </Form.Item>
+            <Form.Item>
+              <Button type="primary" htmlType="submit" loading={bookingLoading} disabled={!isActive || Number(room.availableCount) <= 0}>立即预订</Button>
+            </Form.Item>
+          </Space>
         </Form>
       )}
     </Space>
