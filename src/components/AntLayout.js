@@ -15,6 +15,8 @@ export default function AntLayout({ children }) {
     if (isAuthPage) return [];
     if (location.pathname.startsWith('/admin')) return ['admin'];
     if (location.pathname.startsWith('/me/bookings')) return ['my'];
+    if (location.pathname === '/' || location.pathname === '') return ['home'];
+    if (location.pathname.startsWith('/rooms')) return ['rooms'];
     return ['home'];
   }, [location.pathname, isAuthPage]);
 
@@ -24,6 +26,13 @@ export default function AntLayout({ children }) {
 
     if (path === '/') {
       return base;
+    }
+
+    if (path === '/rooms') {
+      return [
+        ...base,
+        { key: 'rooms', title: <Link to="/rooms">房间列表</Link> }
+      ];
     }
 
     if (path === '/login') {
@@ -43,7 +52,7 @@ export default function AntLayout({ children }) {
     if (path.startsWith('/rooms/')) {
       return [
         ...base,
-        { key: 'rooms', title: <Link to="/">房间列表</Link> },
+        { key: 'rooms', title: <Link to="/rooms">房间列表</Link> },
         { key: 'room-detail', title: <Link to={path}>房间详情</Link> },
       ];
     }
@@ -81,9 +90,14 @@ export default function AntLayout({ children }) {
             items={(() => {
               if (isAuthPage) return [];
               const items = [];
-              items.push({ key: 'home', icon: <HomeOutlined />, label: <Link to="/">房间</Link> });
-              if (user) items.push({ key: 'my', icon: <HomeOutlined />, label: <Link to="/me/bookings">我的订单</Link> });
-              if (user?.role === 'ADMIN') items.push({ key: 'admin', icon: <AppstoreOutlined />, label: <Link to="/admin">管理</Link> });
+              items.push({ key: 'home', icon: <HomeOutlined />, label: <Link to="/">酒店概览</Link> });
+              items.push({ key: 'rooms', icon: <AppstoreOutlined />, label: <Link to="/rooms">房间预订</Link> });
+              if (user && user.role !== 'ADMIN') {
+                items.push({ key: 'my', icon: <HomeOutlined />, label: <Link to="/me/bookings">我的订单</Link> });
+              }
+              if (user?.role === 'ADMIN') {
+                items.push({ key: 'admin', icon: <AppstoreOutlined />, label: <Link to="/admin">管理</Link> });
+              }
               return items;
             })()}
           />

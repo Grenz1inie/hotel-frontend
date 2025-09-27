@@ -20,7 +20,7 @@ export default function RoomList({ onOpen }) {
       setRooms(Array.isArray(data) ? data : []);
     } catch (e) {
       const msg = e?.data?.message || '无法连接后端';
-      navigate('/error', { state: { status: String(e.status || 500), title: '加载失败', subTitle: msg, backTo: '/' }, replace: true });
+      navigate('/error', { state: { status: String(e.status || 500), title: '加载失败', subTitle: msg, backTo: '/rooms' }, replace: true });
     } finally {
       setLoading(false);
     }
@@ -28,17 +28,22 @@ export default function RoomList({ onOpen }) {
 
   React.useEffect(() => { load(); }, [load]);
 
+  const sanitizedRooms = React.useMemo(
+    () => rooms.filter((item) => item && typeof item === 'object'),
+    [rooms]
+  );
+
   const list = React.useMemo(() => {
-    if (!q) return rooms;
+    if (!q) return sanitizedRooms;
     const key = q.toLowerCase();
-    return rooms.filter(r => {
+    return sanitizedRooms.filter(r => {
       const name = (r.name || '').toLowerCase();
       const type = (r.type || '').toLowerCase();
       const bed = (r.bedType || '').toLowerCase();
       const amenities = Array.isArray(r.amenities) ? r.amenities.join(',').toLowerCase() : '';
       return name.includes(key) || type.includes(key) || bed.includes(key) || amenities.includes(key);
     });
-  }, [rooms, q]);
+  }, [sanitizedRooms, q]);
 
   return (
     <Space direction="vertical" size={16} style={{ width: '100%' }}>

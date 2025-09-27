@@ -28,6 +28,10 @@ function normalizeAmenityList(value) {
 			const parsed = JSON.parse(value);
 			if (Array.isArray(parsed)) return parsed.filter(Boolean);
 		} catch (e) {
+			const urlMatches = value.match(/https?:\/\/[^\s,]+/g);
+			if (urlMatches && urlMatches.length) {
+				return urlMatches.map((item) => item.trim()).filter(Boolean);
+			}
 			const parts = value.split(',').map((item) => item.trim()).filter(Boolean);
 			if (parts.length) return parts;
 		}
@@ -137,6 +141,33 @@ function normalizeBooking(booking) {
 	return normalized;
 }
 
+function normalizeHotel(hotel) {
+	if (!hotel || typeof hotel !== 'object') return hotel;
+	const normalized = { ...hotel };
+	if (normalized.hero_image_url != null && normalized.heroImageUrl == null) {
+		normalized.heroImageUrl = normalized.hero_image_url;
+	}
+	if (normalized.gallery_images != null && normalized.galleryImages == null) {
+		normalized.galleryImages = normalized.gallery_images;
+	}
+	if (normalized.star_level != null && normalized.starLevel == null) {
+		normalized.starLevel = normalized.star_level;
+	}
+	if (normalized.created_time != null && normalized.createdTime == null) {
+		normalized.createdTime = normalized.created_time;
+	}
+	if (normalized.updated_time != null && normalized.updatedTime == null) {
+		normalized.updatedTime = normalized.updated_time;
+	}
+	if (normalized.galleryImages != null && !Array.isArray(normalized.galleryImages)) {
+		normalized.galleryImages = getImageList(normalized.galleryImages);
+	}
+	if (normalized.galleryImages == null) {
+		normalized.galleryImages = [];
+	}
+	return normalized;
+}
+
 function normalizePageResponse(payload, mapper) {
 	if (!payload) return payload;
 	if (Array.isArray(payload)) return mapper ? payload.map(mapper) : payload;
@@ -198,14 +229,17 @@ export async function meApi() {
 export async function getRooms() {
 	// 公共浏览：不要求鉴权，401 不跳转
 	const data = await request('/rooms', { auth: false, redirectOn401: false });
-	if (Array.isArray(data)) return data.map(normalizeRoom);
-	return [];
+	if (!Array.isArray(data)) return [];
+	return data
+		.map(normalizeRoom)
+		.filter((room) => room && typeof room === 'object');
 }
 
 export async function getRoomById(id) {
 	// 公共浏览
 	const data = await request(`/rooms/${id}`, { auth: false, redirectOn401: false });
-	return normalizeRoom(data);
+	const normalized = normalizeRoom(data);
+	return normalized && typeof normalized === 'object' ? normalized : null;
 }
 
 export async function adjustRoomTotalCount(id, totalCount) {
@@ -226,7 +260,7 @@ export async function getRoomAvailability(id, { start, end }) {
 	return data;
 }
 
-export async function createBooking({ roomId, userId, start, end, guests, contactName, contactPhone, remark }) {
+export async function createBooking({ roomId, userId, start, end, guests, contactName, contactPhone, remark, hotelId }) {
 	// backend accepts form/query; we pass as query for simplicity
 	const q = { start, end };
 	if (userId) q.userId = userId;
@@ -234,17 +268,33 @@ export async function createBooking({ roomId, userId, start, end, guests, contac
 	if (contactName) q.contactName = contactName;
 	if (contactPhone) q.contactPhone = contactPhone;
 	if (remark) q.remark = remark;
+	if (hotelId) q.hotelId = hotelId;
 	return request(`/rooms/${roomId}/book`, { method: 'POST', query: q });
 }
 
 // Admin booking ops
 export async function confirmBooking(bookingId) {
-	const data = await request(`/rooms/bookings/${bookingId}/confirm`, { method: 'PUT' });
+	const data = await request(`/bookings/${bookingId}/confirm`, { method: 'PUT' });
 	return normalizeBooking(data);
 }
 
 export async function checkoutBooking(bookingId) {
-	const data = await request(`/rooms/bookings/${bookingId}/checkout`, { method: 'PUT' });
+	const data = await request(`/bookings/${bookingId}/checkout`, { method: 'PUT' });
+	return normalizeBooking(data);
+}
+
+export async function checkinBooking(bookingId) {
+	const data = await request(`/bookings/${bookingId}/checkin`, { method: 'PUT' });
+	return normalizeBooking(data);
+}
+
+export async function rejectBooking(bookingId) {
+	const data = await request(`/bookings/${bookingId}/reject`, { method: 'PUT' });
+	return normalizeBooking(data);
+}
+
+export async function deleteBooking(bookingId) {
+	const data = await request(`/bookings/${bookingId}`, { method: 'DELETE' });
 	return normalizeBooking(data);
 }
 
@@ -267,9 +317,8 @@ export function getImageList(images) {
 }
 
 // Admin: list bookings with filters
-export async function adminListBookings({ page = 1, size = 10, status, userId, roomTypeId, roomId, hotelId, start, end } = {}) {
-	const effectiveRoomId = roomTypeId != null ? roomTypeId : roomId;
-	const query = { page, size, status, userId, roomId: effectiveRoomId, hotelId, start, end };
+export async function adminListBookings({ page = 1, size = 10, status, userId, roomTypeId, roomId, hotelId, contactPhone, start, end } = {}) {
+	const query = { page, size, status, userId, roomTypeId, roomId, hotelId, contactPhone, start, end };
 	const data = await request('/bookings', { query });
 	const normalized = normalizePageResponse(data, normalizeBooking);
 	if (Array.isArray(normalized)) {
@@ -286,4 +335,29 @@ export async function getBookingDetail(id) {
 export async function rescheduleBooking(id, { start, end }) {
 	const data = await request(`/bookings/${id}/reschedule`, { method: 'PUT', query: { start, end } });
 	return normalizeBooking(data);
+}
+
+export async function fetchVacancyAnalytics({ roomTypeIds = [], start, end, granularity, thresholdHigh, thresholdLow, forecastDays } = {}) {
+	const query = {};
+	if (Array.isArray(roomTypeIds) && roomTypeIds.length) {
+		query.roomTypeIds = roomTypeIds.join(',');
+	}
+	if (start) query.start = start;
+	if (end) query.end = end;
+	if (granularity) query.granularity = granularity;
+	if (thresholdHigh != null) query.thresholdHigh = thresholdHigh;
+	if (thresholdLow != null) query.thresholdLow = thresholdLow;
+	if (forecastDays != null) query.forecastDays = forecastDays;
+	return request('/analytics/vacancy', { query });
+}
+
+// Hotel info
+export async function getPrimaryHotel() {
+	const data = await request('/hotel/primary', { auth: false, redirectOn401: false });
+	return normalizeHotel(data);
+}
+
+export async function getHotelById(id) {
+	const data = await request(`/hotel/${id}`, { auth: false, redirectOn401: false });
+	return normalizeHotel(data);
 }

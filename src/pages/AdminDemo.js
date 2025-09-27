@@ -15,10 +15,15 @@ import {
 	Select,
 	Spin,
 	Tooltip,
+	Dropdown,
+	Input,
+	Modal,
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings } from '../services/api';
+import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking } from '../services/api';
+import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
+import { DownOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
 
@@ -43,7 +48,6 @@ export default function AdminDemo() {
 	const [rooms, setRooms] = React.useState([]);
 	const [loading, setLoading] = React.useState(false);
 	const [totalInput, setTotalInput] = React.useState({});
-	const [bookingId, setBookingId] = React.useState();
 	const [orders, setOrders] = React.useState(() => ({ ...EMPTY_ORDERS }));
 	const [ordersLoading, setOrdersLoading] = React.useState(false);
 	const [orderFilters, setOrderFilters] = React.useState({});
@@ -66,7 +70,30 @@ export default function AdminDemo() {
 
 	React.useEffect(() => { load(); }, [load]);
 
-		const loadOrders = React.useCallback(async ({ page: overridePage, size: overrideSize, filters } = {}) => {
+	const statusPriority = React.useMemo(() => ({
+		PENDING: 1,
+		CONFIRMED: 2,
+		CHECKED_IN: 3,
+		CHECKED_OUT: 4,
+		CANCELLED: 5,
+		REFUNDED: 6,
+	}), []);
+
+	const sortBookings = React.useCallback((list = []) => {
+		return [...list]
+			.filter(Boolean)
+			.sort((a, b) => {
+				const pa = statusPriority[a?.status] ?? 99;
+				const pb = statusPriority[b?.status] ?? 99;
+				if (pa !== pb) return pa - pb;
+				const sa = a?.startTime ? dayjs(a.startTime).valueOf() : 0;
+				const sb = b?.startTime ? dayjs(b.startTime).valueOf() : 0;
+				if (sa !== sb) return sa - sb;
+				return (a?.id ?? 0) - (b?.id ?? 0);
+			});
+	}, [statusPriority]);
+
+	const loadOrders = React.useCallback(async ({ page: overridePage, size: overrideSize, filters } = {}) => {
 			try {
 				setOrdersLoading(true);
 				const effectiveFilters = filters !== undefined ? filters : orderFilters;
@@ -76,14 +103,35 @@ export default function AdminDemo() {
 					size: overrideSize ?? orders.size,
 				};
 				const res = await adminListBookings(query);
-				setOrders(res || { ...EMPTY_ORDERS });
+				let next;
+				if (!res) {
+					next = { ...EMPTY_ORDERS, page: query.page, size: query.size };
+				} else if (Array.isArray(res)) {
+					next = {
+						...EMPTY_ORDERS,
+						items: sortBookings(res),
+						total: res.length,
+						page: query.page,
+						size: query.size,
+					};
+				} else {
+					const items = Array.isArray(res.items) ? res.items : [];
+					next = {
+						...EMPTY_ORDERS,
+						...res,
+						items: sortBookings(items),
+						page: res.page ?? query.page,
+						size: res.size ?? query.size,
+					};
+				}
+				setOrders(next);
 			} catch (e) {
 				const msg = e?.data?.message || '订单加载失败';
 				navigate('/error', { state: { status: String(e.status || 500), title: '加载订单失败', subTitle: msg, backTo: '/admin' }, replace: true });
 			} finally {
 				setOrdersLoading(false);
 			}
-		}, [orderFilters, orders.page, orders.size, navigate]);
+		}, [orderFilters, navigate, sortBookings, orders.page, orders.size]);
 
 	const loadTimeline = React.useCallback(async (startAt) => {
 		if (!startAt) return;
@@ -154,13 +202,9 @@ export default function AdminDemo() {
 		}
 	};
 
-	const doConfirm = async () => {
-		if (!bookingId) {
-			message.warning('请输入预订ID');
-			return;
-		}
+	const doConfirm = async (id) => {
 		try {
-			const res = await confirmBooking(bookingId);
+			const res = await confirmBooking(id);
 			if (!res) {
 				message.error('确认失败');
 			} else {
@@ -174,13 +218,9 @@ export default function AdminDemo() {
 		}
 	};
 
-	const doCheckout = async () => {
-		if (!bookingId) {
-			message.warning('请输入预订ID');
-			return;
-		}
+	const doCheckout = async (id) => {
 		try {
-			const res = await checkoutBooking(bookingId);
+			const res = await checkoutBooking(id);
 			if (!res) {
 				message.error('退房失败');
 			} else {
@@ -194,7 +234,113 @@ export default function AdminDemo() {
 		}
 	};
 
+	const doCheckin = async (id) => {
+		try {
+			const res = await checkinBooking(id);
+			if (!res) {
+				message.error('办理入住失败');
+			} else {
+				message.success('已标记入住');
+				loadOrders();
+				loadTimeline(timelineStart);
+			}
+		} catch (e) {
+			const msg = e?.data?.message || '办理入住失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '办理入住失败', subTitle: msg, backTo: '/admin' }, replace: true });
+		}
+	};
+
+	const doReject = async (id) => {
+		try {
+			const res = await rejectBooking(id);
+			if (!res) {
+				message.error('拒绝失败');
+			} else {
+				message.success('已拒绝订单');
+				loadOrders();
+				loadTimeline(timelineStart);
+			}
+		} catch (e) {
+			const msg = e?.data?.message || '拒绝失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '拒绝失败', subTitle: msg, backTo: '/admin' }, replace: true });
+		}
+	};
+
+	const doDelete = async (id) => {
+		try {
+			const res = await deleteBooking(id);
+			if (!res) {
+				message.error('删除失败');
+			} else {
+				message.success('已删除订单');
+				loadOrders();
+				loadTimeline(timelineStart);
+			}
+		} catch (e) {
+			const msg = e?.data?.message || '删除失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '删除失败', subTitle: msg, backTo: '/admin' }, replace: true });
+		}
+	};
+
 	const orderColumns = [
+		{
+			title: '操作',
+			key: 'actions',
+			width: 120,
+			render: (_, record) => {
+				const actionItems = [];
+				if (record.status === 'PENDING') {
+					actionItems.push({ key: 'confirm', label: '确认入住' });
+					actionItems.push({ key: 'reject', label: '拒绝订单' });
+				}
+				if (record.status === 'CONFIRMED') {
+					actionItems.push({ key: 'checkin', label: '标记入住' });
+					actionItems.push({ key: 'checkout', label: '办理退房' });
+				}
+				if (record.status === 'CHECKED_IN') {
+					actionItems.push({ key: 'checkout', label: '办理退房' });
+				}
+				if (actionItems.length) {
+					actionItems.push({ type: 'divider' });
+				}
+				actionItems.push({ key: 'delete', label: '删除订单', danger: true });
+				const handleMenuClick = ({ key }) => {
+					switch (key) {
+						case 'confirm':
+							doConfirm(record.id);
+							break;
+						case 'reject':
+							doReject(record.id);
+							break;
+						case 'checkin':
+							doCheckin(record.id);
+							break;
+						case 'checkout':
+							doCheckout(record.id);
+							break;
+						case 'delete':
+							Modal.confirm({
+								title: `确认删除订单 #${record.id}?`,
+								content: '删除后无法恢复，请确认已经处理相关善后。',
+								okText: '删除',
+								cancelText: '取消',
+								okType: 'danger',
+								onOk: () => doDelete(record.id),
+							});
+							break;
+						default:
+							break;
+					}
+				};
+				return (
+					<Dropdown menu={{ items: actionItems, onClick: handleMenuClick }}>
+						<Button type="link">
+							操作 <DownOutlined />
+						</Button>
+					</Dropdown>
+				);
+			},
+		},
 		{ title: '订单ID', dataIndex: 'id', key: 'id', width: 90 },
 		{ title: '用户ID', dataIndex: 'userId', key: 'userId', width: 90 },
 		{ title: '酒店ID', dataIndex: 'hotelId', key: 'hotelId', width: 90 },
@@ -216,23 +362,17 @@ export default function AdminDemo() {
 	return (
 		<Space direction="vertical" size={16} style={{ width: '100%' }}>
 			<Title level={3} style={{ margin: 0 }}>管理（演示）</Title>
-			<Card>
-				<Space>
-					<Text>Booking ID:</Text>
-					<InputNumber value={bookingId} onChange={setBookingId} min={1} />
-					<Button onClick={doConfirm}>确认入住</Button>
-					<Button onClick={doCheckout}>退房</Button>
-				</Space>
-			</Card>
 			<Card title="订单管理">
 				<Form
 					layout="inline"
 					onFinish={(vals) => {
-						const { status, userId, roomTypeId, range } = vals;
+						const { status, userId, roomTypeId, hotelId, contactPhone, range } = vals;
 						const filters = {};
 						if (status) filters.status = status;
 						if (userId) filters.userId = userId;
 						if (roomTypeId) filters.roomTypeId = roomTypeId;
+						if (hotelId) filters.hotelId = hotelId;
+						if (contactPhone) filters.contactPhone = contactPhone;
 						if (range?.[0] && range?.[1]) {
 							filters.start = range[0].toISOString();
 							filters.end = range[1].toISOString();
@@ -257,6 +397,12 @@ export default function AdminDemo() {
 					</Form.Item>
 					<Form.Item label="房型ID" name="roomTypeId">
 						<InputNumber min={1} />
+					</Form.Item>
+					<Form.Item label="酒店ID" name="hotelId">
+						<InputNumber min={1} />
+					</Form.Item>
+					<Form.Item label="联系电话" name="contactPhone">
+						<Input placeholder="支持模糊匹配" allowClear />
 					</Form.Item>
 					<Form.Item label="时间范围" name="range">
 						<DatePicker.RangePicker showTime />
@@ -432,6 +578,7 @@ export default function AdminDemo() {
 					</Space>
 				</Space>
 			</Card>
+			<VacancyAnalyticsPanel />
 			<Row gutter={[16, 16]}>
 				{rooms.map(r => (
 					<Col xs={24} sm={12} md={8} lg={6} key={r.id}>

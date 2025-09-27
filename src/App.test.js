@@ -11,7 +11,17 @@ jest.mock('./pages/RoomList', () => ({
   default: () => <h1>房间列表</h1>,
 }));
 
-test('首页展示房间列表标题', () => {
+jest.mock('./pages/HotelLanding', () => ({
+  __esModule: true,
+  default: ({ onEnterRooms }) => (
+    <div>
+      <h1>酒店概览</h1>
+      <button type="button" onClick={onEnterRooms}>进入房间列表</button>
+    </div>
+  ),
+}));
+
+test('首页展示酒店概览标题', () => {
   render(<App />);
-  expect(screen.getByText('房间列表')).toBeInTheDocument();
+  expect(screen.getByText('酒店概览')).toBeInTheDocument();
 });

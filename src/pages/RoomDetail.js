@@ -29,12 +29,13 @@ export default function RoomDetail({ id, onBack }) {
           guests: defaultGuests,
           contactName: user?.username || '',
           contactPhone: '',
-          remark: ''
+          remark: '',
+          hotelId: data.hotelId
         });
       }
     } catch (e) {
       console.error(e);
-      navigate('/error', { state: { status: '500', title: '加载失败', subTitle: '无法连接后端', backTo: '/' }, replace: true });
+      navigate('/error', { state: { status: '500', title: '加载失败', subTitle: '无法连接后端', backTo: '/rooms' }, replace: true });
     } finally {
       setLoading(false);
     }
@@ -60,7 +61,7 @@ export default function RoomDetail({ id, onBack }) {
         }
       } catch (e) {
         if (e.status === 404) {
-          navigate('/error', { state: { status: '404', title: '房型不存在', subTitle: '请返回列表重试', backTo: '/' }, replace: true });
+          navigate('/error', { state: { status: '404', title: '房型不存在', subTitle: '请返回列表重试', backTo: '/rooms' }, replace: true });
           return;
         }
         // 422 or other errors继续尝试创建时由后端返回原因
@@ -76,6 +77,7 @@ export default function RoomDetail({ id, onBack }) {
         contactName: vals.contactName,
         contactPhone: vals.contactPhone,
         remark: vals.remark,
+        hotelId: vals.hotelId ?? room?.hotelId,
       };
       const data = await createBooking(payload);
       if (!data) {
@@ -88,7 +90,8 @@ export default function RoomDetail({ id, onBack }) {
           guests: maxGuestsLimit ? Math.min(maxGuestsLimit, 2) : 1,
           contactName: user?.username || '',
           contactPhone: '',
-          remark: ''
+          remark: '',
+          hotelId: room?.hotelId
         });
         load();
       }
@@ -171,10 +174,14 @@ export default function RoomDetail({ id, onBack }) {
             guests: defaultGuestCount,
             contactName: user?.username || '',
             contactPhone: '',
-            remark: ''
+            remark: '',
+            hotelId: room?.hotelId
           }}
         >
           <Space direction="vertical" style={{ width: '100%' }}>
+            <Form.Item name="hotelId" hidden>
+              <Input type="hidden" />
+            </Form.Item>
             <Form.Item name="range" label="开始/结束时间" rules={[{ required: true, message: '请选择时间范围' }]}>
               <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm:ss" style={{ width: '100%' }} />
             </Form.Item>
