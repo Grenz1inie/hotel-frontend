@@ -38,7 +38,7 @@ export default function AntLayout({ children }) {
     if (path === '/login') {
       return [
         ...base,
-        { key: 'login', title: <Link to="/login">登录</Link> },
+        { key: 'login', title: <Link to="/login">登入/注册</Link> },
       ];
     }
 
@@ -117,7 +117,7 @@ export default function AntLayout({ children }) {
                 </Space>
               </Dropdown>
             ) : (
-              <Link to="/login" style={{ color: '#fff' }}>登录</Link>
+              <Link to="/login" style={{ color: '#fff' }}>登入/注册</Link>
             )}
           </div>
         </Header>

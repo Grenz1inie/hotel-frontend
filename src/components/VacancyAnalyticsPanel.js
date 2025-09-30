@@ -44,6 +44,21 @@ const RANGE_PRESETS = [
 const DEFAULT_THRESHOLD_HIGH = 0.7;
 const DEFAULT_THRESHOLD_LOW = 0.2;
 
+function toFiniteNumber(value) {
+	if (value === null || value === undefined) return null;
+	const num = Number(value);
+	return Number.isFinite(num) ? num : null;
+}
+
+function normalizeBreakdownMap(breakdown) {
+	if (!breakdown || typeof breakdown !== 'object') return null;
+	return Object.entries(breakdown).reduce((acc, [key, val]) => {
+		const parsed = toFiniteNumber(val);
+		acc[key] = parsed ?? val;
+		return acc;
+	}, {});
+}
+
 function resolveRange(preset, customRange, granularity) {
 	const now = dayjs();
 	switch (preset) {
@@ -159,25 +174,33 @@ export default function VacancyAnalyticsPanel() {
 	const dataset = React.useMemo(() => {
 		if (!analytics?.series?.length) return [];
 		const rows = [];
-		analytics.series.forEach(series => {
-			(series.points || []).forEach(point => {
+		analytics.series.forEach((series = {}) => {
+			const seriesName = series.roomTypeName || (series.roomTypeId != null ? `房型 #${series.roomTypeId}` : '房型');
+			const totalRooms = toFiniteNumber(series.totalRooms);
+			(series.points || []).forEach((point = {}) => {
 				if (!includeForecast && point.forecast) return;
-				const value = metric === 'vacancyCount' ? point.vacancyCount : metric === 'vacancyRate' ? point.vacancyRate : point.bookingRate;
-				if (value == null || Number.isNaN(value)) return;
+				const ts = dayjs(point.timestamp);
+				if (!ts.isValid()) return;
+				const vacancyCount = toFiniteNumber(point.vacancyCount);
+				const vacancyRate = toFiniteNumber(point.vacancyRate);
+				const bookingRate = toFiniteNumber(point.bookingRate);
+				const metricValueMap = { vacancyCount, vacancyRate, bookingRate };
+				const value = metricValueMap[metric];
+				if (value == null) return;
 				rows.push({
 					roomTypeId: series.roomTypeId,
-					roomTypeName: series.roomTypeName,
-					timestamp: dayjs(point.timestamp).toDate(),
+					roomTypeName: seriesName,
+					timestamp: ts.toDate(),
 					value,
-					vacancyCount: point.vacancyCount,
-					vacancyRate: point.vacancyRate,
-					bookingRate: point.bookingRate,
-					forecast: point.forecast,
-					sourceBreakdown: point.sourceBreakdown,
-					statusBreakdown: point.statusBreakdown,
-					averagePrice: point.averagePrice,
-					priceStrategy: point.priceStrategy,
-					totalRooms: series.totalRooms,
+					vacancyCount,
+					vacancyRate,
+					bookingRate,
+					forecast: Boolean(point.forecast),
+					sourceBreakdown: normalizeBreakdownMap(point.sourceBreakdown),
+					statusBreakdown: normalizeBreakdownMap(point.statusBreakdown),
+					averagePrice: toFiniteNumber(point.averagePrice),
+					priceStrategy: point.priceStrategy ?? null,
+					totalRooms,
 				});
 			});
 		});
@@ -340,26 +363,35 @@ export default function VacancyAnalyticsPanel() {
 
 	const detailDataSource = React.useMemo(() => {
 		if (!detailPoint) return [];
-		const rows = [
-			{ key: 'room', label: '房型', value: detailPoint.roomTypeName },
-			{ key: 'time', label: '时间', value: detailPoint.timestamp.format('YYYY-MM-DD HH:mm') },
-			{ key: 'vacancy', label: '空置数量', value: detailPoint.vacancyCount?.toFixed(2) },
-			{ key: 'vacancyRate', label: '空置率', value: (detailPoint.vacancyRate * 100).toFixed(2) + '%' },
-			{ key: 'bookingRate', label: '预订率', value: (detailPoint.bookingRate * 100).toFixed(2) + '%' },
-			{ key: 'price', label: '平均价格', value: detailPoint.averagePrice != null ? `¥${Number(detailPoint.averagePrice).toFixed(2)}` : '-' },
+		const vacancyCount = toFiniteNumber(detailPoint.vacancyCount);
+		const vacancyRate = toFiniteNumber(detailPoint.vacancyRate);
+		const bookingRate = toFiniteNumber(detailPoint.bookingRate);
+		const averagePrice = toFiniteNumber(detailPoint.averagePrice);
+		return [
+			{ key: 'room', label: '房型', value: detailPoint.roomTypeName ?? '-' },
+			{ key: 'time', label: '时间', value: detailPoint.timestamp?.format?.('YYYY-MM-DD HH:mm') ?? '-' },
+			{ key: 'vacancy', label: '空置数量', value: vacancyCount != null ? vacancyCount.toFixed(2) : '-' },
+			{ key: 'vacancyRate', label: '空置率', value: vacancyRate != null ? `${(vacancyRate * 100).toFixed(2)}%` : '-' },
+			{ key: 'bookingRate', label: '预订率', value: bookingRate != null ? `${(bookingRate * 100).toFixed(2)}%` : '-' },
+			{ key: 'price', label: '平均价格', value: averagePrice != null ? `¥${averagePrice.toFixed(2)}` : '-' },
 			{ key: 'strategy', label: '价格策略', value: detailPoint.priceStrategy || '-' },
 		];
-		return rows;
 	}, [detailPoint]);
 
 	const detailStatusData = React.useMemo(() => {
 		if (!detailPoint?.statusBreakdown) return [];
-		return Object.entries(detailPoint.statusBreakdown).map(([k, v]) => ({ key: k, label: `状态-${k}`, value: v }));
+		return Object.entries(detailPoint.statusBreakdown).map(([k, v]) => {
+			const parsed = toFiniteNumber(v);
+			return { key: k, label: `状态-${k}`, value: parsed != null ? parsed : v };
+		});
 	}, [detailPoint]);
 
 	const detailSourceData = React.useMemo(() => {
 		if (!detailPoint?.sourceBreakdown) return [];
-		return Object.entries(detailPoint.sourceBreakdown).map(([k, v]) => ({ key: k, label: `来源-${k}`, value: v }));
+		return Object.entries(detailPoint.sourceBreakdown).map(([k, v]) => {
+			const parsed = toFiniteNumber(v);
+			return { key: k, label: `来源-${k}`, value: parsed != null ? parsed : v };
+		});
 	}, [detailPoint]);
 
 	return (
@@ -420,21 +452,28 @@ export default function VacancyAnalyticsPanel() {
 					</Spin>
 				</div>
 				{analytics?.alerts?.length ? (
-					<Card size="small" title="阈值预警">
-						<List
-							dataSource={analytics.alerts}
-							renderItem={alert => (
-								<List.Item>
-									<Space direction="vertical" size={0}>
-										<Text strong>{alert.roomTypeName}</Text>
-										<Text>{dayjs(alert.start).format('YYYY-MM-DD HH:mm')} ~ {dayjs(alert.end).format('YYYY-MM-DD HH:mm')}</Text>
-										<Text type={alert.level === 'HIGH' ? 'danger' : 'success'}>
-											{alert.reason}（阈值 {Math.round(alert.threshold * 100)}%，实际 {Math.round(alert.actual * 100)}%）
-										</Text>
-									</Space>
-								</List.Item>
-							)}
-						/>
+					<Card
+						size="small"
+						title="阈值预警"
+						bodyStyle={{ padding: 0 }}
+					>
+						<div style={{ maxHeight: 240, overflowY: 'auto', padding: '8px 16px' }}>
+							<List
+								dataSource={analytics.alerts}
+								split={false}
+								renderItem={alert => (
+									<List.Item style={{ padding: '8px 0' }}>
+										<Space direction="vertical" size={0}>
+											<Text strong>{alert.roomTypeName}</Text>
+											<Text>{dayjs(alert.start).format('YYYY-MM-DD HH:mm')} ~ {dayjs(alert.end).format('YYYY-MM-DD HH:mm')}</Text>
+											<Text type={alert.level === 'HIGH' ? 'danger' : 'success'}>
+												{alert.reason}（阈值 {Math.round(alert.threshold * 100)}%，实际 {Math.round(alert.actual * 100)}%）
+											</Text>
+										</Space>
+									</List.Item>
+								)}
+							/>
+						</div>
 					</Card>
 				) : null}
 				{analytics?.events?.length ? (

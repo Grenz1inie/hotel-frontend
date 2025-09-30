@@ -20,7 +20,7 @@ import {
 	Modal,
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking } from '../services/api';
+import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, createBooking, getRoomAvailability } from '../services/api';
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
 import { DownOutlined } from '@ant-design/icons';
@@ -54,6 +54,9 @@ export default function AdminDemo() {
 	const [timelineStart, setTimelineStart] = React.useState(() => dayjs().startOf('day'));
 	const [timelineLoading, setTimelineLoading] = React.useState(false);
 	const [timelineBookings, setTimelineBookings] = React.useState([]);
+	const [bookingModalOpen, setBookingModalOpen] = React.useState(false);
+	const [bookingSubmitting, setBookingSubmitting] = React.useState(false);
+	const [manualBookingForm] = Form.useForm();
 	const navigate = useNavigate();
 
 	const load = React.useCallback(async () => {
@@ -282,6 +285,92 @@ export default function AdminDemo() {
 		}
 	};
 
+	const openBookingModal = React.useCallback(() => {
+		if (!rooms.length) {
+			message.warning('当前没有可用房型');
+			return;
+		}
+		const defaultStart = dayjs().hour(14).minute(0).second(0);
+		const defaultEnd = dayjs().add(1, 'day').hour(12).minute(0).second(0);
+		const primaryRoom = rooms[0];
+		manualBookingForm.resetFields();
+		manualBookingForm.setFieldsValue({
+			roomId: primaryRoom?.id,
+			range: [defaultStart, defaultEnd],
+			guests: Math.max(1, Number(primaryRoom?.maxGuests) || 1),
+			contactName: '',
+			contactPhone: '',
+			remark: '',
+			userId: undefined,
+		});
+		setBookingModalOpen(true);
+	}, [manualBookingForm, rooms]);
+
+	const handleManualBooking = React.useCallback(async () => {
+		try {
+			const values = await manualBookingForm.validateFields();
+			const [startMoment, endMoment] = values.range || [];
+			if (!startMoment || !endMoment) {
+				message.warning('请选择开始和结束时间');
+				return;
+			}
+			if (!values.roomId) {
+				message.warning('请选择房型');
+				return;
+			}
+			const start = startMoment.toISOString();
+			const end = endMoment.toISOString();
+			setBookingSubmitting(true);
+			try {
+				const availability = await getRoomAvailability(values.roomId, { start, end });
+				if (availability && availability.available === false) {
+					message.error('该时段库存不足，请选择其他时间');
+					return;
+				}
+			} catch (availabilityError) {
+				// availability检查失败时保留后端校验结果，继续创建预约
+				console.warn('availability check failed', availabilityError);
+			}
+			const targetRoom = rooms.find(room => room.id === values.roomId);
+			const payload = {
+				roomId: values.roomId,
+				userId: values.userId || undefined,
+				start,
+				end,
+				guests: values.guests,
+				contactName: values.contactName,
+				contactPhone: values.contactPhone,
+				remark: values.remark,
+				hotelId: targetRoom?.hotelId,
+			};
+			const res = await createBooking(payload);
+			if (!res) {
+				message.error('创建预约失败');
+				return;
+			}
+			const bookingIdText = res.id ? ` #${res.id}` : '';
+			const messageParts = [`预约创建成功${bookingIdText}`];
+			if (!values.userId && res.userId) {
+				messageParts.push(`已为客户创建账号 (ID: ${res.userId}，初始密码：123456)`);
+			}
+			message.success(messageParts.join('，'));
+			setBookingModalOpen(false);
+			manualBookingForm.resetFields();
+			loadOrders();
+			loadTimeline(timelineStart);
+		} catch (error) {
+			if (error?.errorFields) {
+				// 表单校验错误已在表单项中展示
+				return;
+			}
+			console.error(error);
+			const msg = error?.data?.message || '创建预约失败';
+			message.error(msg);
+		} finally {
+			setBookingSubmitting(false);
+		}
+	}, [createBooking, getRoomAvailability, loadOrders, loadTimeline, manualBookingForm, rooms, timelineStart]);
+
 	const orderColumns = [
 		{
 			title: '操作',
@@ -362,7 +451,14 @@ export default function AdminDemo() {
 	return (
 		<Space direction="vertical" size={16} style={{ width: '100%' }}>
 			<Title level={3} style={{ margin: 0 }}>管理（演示）</Title>
-			<Card title="订单管理">
+			<Card
+				title="订单管理"
+				extra={(
+					<Button type="primary" onClick={openBookingModal} disabled={!rooms.length}>
+						手动预约
+					</Button>
+				)}
+			>
 				<Form
 					layout="inline"
 					onFinish={(vals) => {
@@ -435,6 +531,107 @@ export default function AdminDemo() {
 						}
 					}}
 				/>
+				<Modal
+					title="手动帮助客户预约"
+					open={bookingModalOpen}
+					onCancel={() => {
+						setBookingModalOpen(false);
+						manualBookingForm.resetFields();
+					}}
+					onOk={handleManualBooking}
+					okText="创建预约"
+					cancelText="取消"
+					confirmLoading={bookingSubmitting}
+					destroyOnClose
+					maskClosable={!bookingSubmitting}
+					centered
+				>
+					<Form form={manualBookingForm} layout="vertical">
+						<Form.Item name="roomId" label="房型" rules={[{ required: true, message: '请选择房型' }] }>
+							<Select
+								showSearch
+								placeholder="请选择房型"
+								optionFilterProp="label"
+								options={rooms.map(room => ({
+									value: room.id,
+									label: `${room.name ?? room.type ?? '房型'} (#${room.id})`,
+								}))}
+							/>
+						</Form.Item>
+						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.roomId !== cur.roomId}>
+							{() => {
+								const pickedRoomId = manualBookingForm.getFieldValue('roomId');
+								const pickedRoom = rooms.find(room => room.id === pickedRoomId);
+								if (!pickedRoom) return null;
+								const available = Number(pickedRoom.availableCount);
+								const total = Number(pickedRoom.totalCount);
+								return (
+									<div style={{ marginBottom: 12 }}>
+										<Text type="secondary">
+											酒店 #{pickedRoom.hotelId ?? '—'} · 当前库存 {Number.isNaN(available) ? pickedRoom.availableCount ?? '未知' : available}/{Number.isNaN(total) ? pickedRoom.totalCount ?? '未知' : total}
+										</Text>
+									</div>
+								);
+							}}
+						</Form.Item>
+						<Form.Item
+							name="range"
+							label="入住与退房时间"
+							rules={[{ required: true, message: '请选择入住与退房时间' }]}
+						>
+							<DatePicker.RangePicker
+								showTime
+								format="YYYY-MM-DD HH:mm"
+								style={{ width: '100%' }}
+							/>
+						</Form.Item>
+						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.roomId !== cur.roomId}>
+							{() => {
+								const pickedRoomId = manualBookingForm.getFieldValue('roomId');
+								const pickedRoom = rooms.find(room => room.id === pickedRoomId);
+								const maxGuestsValue = Number(pickedRoom?.maxGuests);
+								const maxGuests = Number.isFinite(maxGuestsValue) && maxGuestsValue > 0 ? maxGuestsValue : 10;
+								return (
+									<Form.Item
+										name="guests"
+										label="入住人数"
+										rules={[{ required: true, message: '请输入入住人数' }]}
+									>
+										<InputNumber min={1} max={maxGuests} style={{ width: '100%' }} placeholder={`请输入入住人数（最多 ${maxGuests} 人）`} />
+									</Form.Item>
+								);
+							}}
+						</Form.Item>
+						<Form.Item
+							name="userId"
+							label="关联用户ID"
+							tooltip="可选，如需关联已有会员账户"
+						>
+							<InputNumber min={1} style={{ width: '100%' }} placeholder="可选，填写现有用户ID" />
+						</Form.Item>
+						<Form.Item
+							name="contactName"
+							label="联系人姓名"
+							rules={[{ required: true, message: '请输入联系人姓名' }]}
+						>
+							<Input placeholder="请输入联系人姓名" />
+						</Form.Item>
+						<Form.Item
+							name="contactPhone"
+							label="联系电话"
+							rules={[{ required: true, message: '请输入联系电话' }]}
+						>
+							<Input placeholder="请输入联系电话" />
+						</Form.Item>
+						<Form.Item name="remark" label="备注">
+							<Input.TextArea rows={3} placeholder="可填写客户特殊需求" />
+						</Form.Item>
+						<Space direction="vertical" size={4}>
+							<Text type="secondary">若未填写“关联用户ID”，系统将依据联系电话为客户自动创建账号（初始密码：123456）。</Text>
+							<Text type="secondary">创建后将立即生成订单并占用对应房型库存，请确认信息准确无误。</Text>
+						</Space>
+					</Form>
+				</Modal>
 			</Card>
 			<Card title="入住规划表">
 				<Space direction="vertical" size={12} style={{ width: '100%' }}>

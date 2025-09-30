@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, DatePicker, message, Tag, Input } from 'antd';
+import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, DatePicker, message, Tag, Input, Alert } from 'antd';
 import dayjs from 'dayjs';
 import { getRoomById, getImageList, createBooking, getRoomAvailability } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,7 @@ export default function RoomDetail({ id, onBack }) {
   const [form] = Form.useForm();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = user?.role === 'ADMIN';
 
   const load = React.useCallback(async () => {
     if (!id) return;
@@ -27,10 +28,10 @@ export default function RoomDetail({ id, onBack }) {
         form.setFieldsValue({
           range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
           guests: defaultGuests,
-          contactName: user?.username || '',
+          contactName: isAdmin ? '' : (user?.username || ''),
           contactPhone: '',
           remark: '',
-          hotelId: data.hotelId
+          hotelId: data.hotelId,
         });
       }
     } catch (e) {
@@ -66,11 +67,9 @@ export default function RoomDetail({ id, onBack }) {
         }
         // 422 or other errors继续尝试创建时由后端返回原因
       }
-      const isAdmin = user?.role === 'ADMIN';
-      const uid = isAdmin ? (vals.userId || user?.id) : user?.id;
       const payload = {
         roomId: id,
-        userId: isAdmin ? uid : undefined,
+        userId: undefined,
         start,
         end,
         guests: vals.guests,
@@ -83,15 +82,19 @@ export default function RoomDetail({ id, onBack }) {
       if (!data) {
         message.error('预订失败，可能无可用房间');
       } else {
-        message.success(`预订成功，状态: ${data.status}`);
+        const parts = [`预订成功，状态: ${data.status}`];
+        if (isAdmin && data.userId && data.userId !== user?.id) {
+          parts.push(`已为客户创建账号 (ID: ${data.userId}，初始密码：123456)`);
+        }
+        message.success(parts.join('，'));
         form.resetFields();
         form.setFieldsValue({
           range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
           guests: maxGuestsLimit ? Math.min(maxGuestsLimit, 2) : 1,
-          contactName: user?.username || '',
+          contactName: isAdmin ? '' : (user?.username || ''),
           contactPhone: '',
           remark: '',
-          hotelId: room?.hotelId
+          hotelId: room?.hotelId,
         });
         load();
       }
@@ -154,54 +157,58 @@ export default function RoomDetail({ id, onBack }) {
       <Title level={4}>预订</Title>
       {!user && (
         <Space>
-          <Typography.Text type="secondary">登录后才能预订。</Typography.Text>
-          <Button type="primary" onClick={() => navigate('/login')}>去登录</Button>
+          <Typography.Text type="secondary">登入/注册后才能预订。</Typography.Text>
+          <Button type="primary" onClick={() => navigate('/login')}>去登入/注册</Button>
         </Space>
       )}
-      {user?.role === 'ADMIN' && (
-        <Space>
-          <Typography.Text type="secondary">管理员不可在此页直接预订，请前往“管理”页进行库存调整等操作。</Typography.Text>
-          <Button onClick={() => navigate('/admin')}>去管理页</Button>
+      {user && (
+        <Space direction="vertical" style={{ width: '100%' }}>
+          {isAdmin ? (
+            <Alert
+              showIcon
+              type="info"
+              message="管理员可在此为客户创建预订"
+              description="系统会根据联系电话自动匹配或创建客户账号（新账号初始密码：123456），请务必填写正确电话。"
+            />
+          ) : null}
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={onFinish}
+            initialValues={{
+              range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
+              guests: defaultGuestCount,
+              contactName: isAdmin ? '' : (user?.username || ''),
+              contactPhone: '',
+              remark: '',
+              hotelId: room?.hotelId,
+            }}
+          >
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Form.Item name="hotelId" hidden>
+                <Input type="hidden" />
+              </Form.Item>
+              <Form.Item name="range" label="开始/结束时间" rules={[{ required: true, message: '请选择时间范围' }]}> 
+                <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm:ss" style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="guests" label="入住人数" rules={[{ required: true, message: '请输入人数' }]}> 
+                <InputNumber min={1} max={maxGuestsLimit || 10} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item name="contactName" label="联系人姓名" rules={[{ required: true, message: '请输入联系人姓名' }]}> 
+                <Input placeholder="请输入联系人姓名" />
+              </Form.Item>
+              <Form.Item name="contactPhone" label="联系电话" rules={[{ required: true, message: '请输入联系电话' }]}> 
+                <Input placeholder="请输入联系电话" />
+              </Form.Item>
+              <Form.Item name="remark" label="备注">
+                <Input.TextArea rows={3} placeholder="可选，填写特殊需求" />
+              </Form.Item>
+              <Form.Item>
+                <Button type="primary" htmlType="submit" loading={bookingLoading} disabled={!isActive || Number(room.availableCount) <= 0}>{isAdmin ? '创建预约' : '立即预订'}</Button>
+              </Form.Item>
+            </Space>
+          </Form>
         </Space>
-      )}
-      {user && user.role !== 'ADMIN' && (
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          initialValues={{
-            range: [dayjs().hour(14), dayjs().add(1, 'day').hour(12)],
-            guests: defaultGuestCount,
-            contactName: user?.username || '',
-            contactPhone: '',
-            remark: '',
-            hotelId: room?.hotelId
-          }}
-        >
-          <Space direction="vertical" style={{ width: '100%' }}>
-            <Form.Item name="hotelId" hidden>
-              <Input type="hidden" />
-            </Form.Item>
-            <Form.Item name="range" label="开始/结束时间" rules={[{ required: true, message: '请选择时间范围' }]}>
-              <DatePicker.RangePicker showTime format="YYYY-MM-DD HH:mm:ss" style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="guests" label="入住人数" rules={[{ required: true, message: '请输入人数' }]}>
-              <InputNumber min={1} max={maxGuestsLimit || 10} style={{ width: 160 }} />
-            </Form.Item>
-            <Form.Item name="contactName" label="联系人姓名" rules={[{ required: true, message: '请输入联系人姓名' }]}>
-              <Input placeholder="请输入联系人姓名" />
-            </Form.Item>
-            <Form.Item name="contactPhone" label="联系电话" rules={[{ required: true, message: '请输入联系电话' }]}>
-              <Input placeholder="请输入联系电话" />
-            </Form.Item>
-            <Form.Item name="remark" label="备注">
-              <Input.TextArea rows={3} placeholder="可选，填写特殊需求" />
-            </Form.Item>
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={bookingLoading} disabled={!isActive || Number(room.availableCount) <= 0}>立即预订</Button>
-            </Form.Item>
-          </Space>
-        </Form>
       )}
     </Space>
   );

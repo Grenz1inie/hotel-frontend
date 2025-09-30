@@ -221,6 +221,10 @@ export async function loginApi({ username, password }) {
 	return request('/auth/login', { method: 'POST', json: true, body: { username, password }, auth: false });
 }
 
+export async function registerApi({ username, password, confirmPassword, phone, email }) {
+	return request('/auth/register', { method: 'POST', json: true, body: { username, password, confirmPassword, phone, email }, auth: false });
+}
+
 export async function meApi() {
 	return request('/auth/me', { method: 'GET' });
 }

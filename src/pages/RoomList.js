@@ -59,8 +59,8 @@ export default function RoomList({ onOpen }) {
       />
         {!user && (
           <Space>
-            <Text type="secondary">登录后可进行预订</Text>
-            <Button type="primary" onClick={() => navigate('/login')}>去登录</Button>
+            <Text type="secondary">登入/注册后可进行预订</Text>
+            <Button type="primary" onClick={() => navigate('/login')}>去登入/注册</Button>
           </Space>
         )}
       </Space>

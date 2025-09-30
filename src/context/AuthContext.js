@@ -1,6 +1,6 @@
 import React from 'react';
 import { message } from 'antd';
-import { loginApi, meApi } from '../services/api';
+import { loginApi, meApi, registerApi } from '../services/api';
 
 const AuthContext = React.createContext(null);
 
@@ -37,7 +37,7 @@ export function AuthProvider({ children }) {
     })();
   }, [token]);
 
-  const login = async (username, password) => {
+  const login = React.useCallback(async (username, password) => {
     try {
       const data = await loginApi({ username, password });
       // data: { token, user }
@@ -52,16 +52,32 @@ export function AuthProvider({ children }) {
       const msg = e?.data?.message || e?.message || '登录失败';
       return { ok: false, error: { status: e.status, message: msg } };
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const register = React.useCallback(async ({ username, password, confirmPassword, phone, email }) => {
+    try {
+      const data = await registerApi({ username, password, confirmPassword, phone, email });
+      if (!data?.token || !data?.user) throw new Error('注册响应缺少必要字段');
+      setToken(data.token);
+      setUser(data.user);
+      localStorage.setItem('auth:token', data.token);
+      localStorage.setItem('auth:user', JSON.stringify(data.user));
+      message.success('注册成功，已自动登录');
+      return { ok: true, data: data.user };
+    } catch (e) {
+      const msg = e?.data?.message || e?.message || '注册失败';
+      return { ok: false, error: { status: e.status, message: msg } };
+    }
+  }, []);
+
+  const logout = React.useCallback(() => {
     setUser(null);
     setToken('');
     localStorage.removeItem('auth:user');
     localStorage.removeItem('auth:token');
-  };
+  }, []);
 
-  const value = React.useMemo(() => ({ user, token, login, logout, isAuthed: !!user, role: user?.role }), [user, token]);
+  const value = React.useMemo(() => ({ user, token, login, logout, register, isAuthed: !!user, role: user?.role }), [user, token, login, logout, register]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
