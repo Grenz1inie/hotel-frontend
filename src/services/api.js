@@ -39,6 +39,25 @@ function normalizeAmenityList(value) {
 	return [];
 }
 
+function formatDateTimeInput(value) {
+	if (!value) return null;
+	if (typeof value === 'string') {
+		return value.includes('T') ? value.slice(0, 19) : value;
+	}
+	if (value instanceof Date && typeof value.toISOString === 'function') {
+		return value.toISOString().slice(0, 19);
+	}
+	if (typeof value === 'object') {
+		if (typeof value.format === 'function') {
+			return value.format('YYYY-MM-DDTHH:mm:ss');
+		}
+		if (typeof value.toISOString === 'function') {
+			return value.toISOString().slice(0, 19);
+		}
+	}
+	return String(value);
+}
+
 function normalizeRoom(room) {
 	if (!room || typeof room !== 'object') return room;
 	const normalized = { ...room };
@@ -87,6 +106,38 @@ function normalizeRoom(room) {
 	if (normalized.pricePerNight != null) {
 		const price = Number(normalized.pricePerNight);
 		normalized.pricePerNight = Number.isNaN(price) ? normalized.pricePerNight : price;
+	}
+	return normalized;
+}
+
+function normalizeRoomInstance(room) {
+	if (!room || typeof room !== 'object') return room;
+	const normalized = { ...room };
+	if (normalized.room_type_id != null && normalized.roomTypeId == null) {
+		normalized.roomTypeId = normalized.room_type_id;
+	}
+	if (normalized.room_number != null && normalized.roomNumber == null) {
+		normalized.roomNumber = normalized.room_number;
+	}
+	if (normalized.hotel_id != null && normalized.hotelId == null) {
+		normalized.hotelId = normalized.hotel_id;
+	}
+	if (normalized.last_checkout_time != null && normalized.lastCheckoutTime == null) {
+		normalized.lastCheckoutTime = normalized.last_checkout_time;
+	}
+	if (normalized.created_time != null && normalized.createdTime == null) {
+		normalized.createdTime = normalized.created_time;
+	}
+	if (normalized.updated_time != null && normalized.updatedTime == null) {
+		normalized.updatedTime = normalized.updated_time;
+	}
+	if (normalized.status != null) {
+		const val = Number(normalized.status);
+		normalized.status = Number.isNaN(val) ? normalized.status : val;
+	}
+	if (normalized.floor != null) {
+		const val = Number(normalized.floor);
+		normalized.floor = Number.isNaN(val) ? normalized.floor : val;
 	}
 	return normalized;
 }
@@ -252,7 +303,11 @@ export async function adjustRoomTotalCount(id, totalCount) {
 
 export async function getRoomAvailability(id, { start, end }) {
 	// 公共浏览
-	const data = await request(`/rooms/${id}/availability`, { query: { start, end }, auth: false, redirectOn401: false });
+	const data = await request(`/rooms/${id}/availability`, {
+		query: { start: formatDateTimeInput(start), end: formatDateTimeInput(end) },
+		auth: false,
+		redirectOn401: false
+	});
 	if (data && typeof data === 'object') {
 		const availableCount = Number(data.availableCount);
 		return {
@@ -264,16 +319,36 @@ export async function getRoomAvailability(id, { start, end }) {
 	return data;
 }
 
-export async function createBooking({ roomId, userId, start, end, guests, contactName, contactPhone, remark, hotelId }) {
-	// backend accepts form/query; we pass as query for simplicity
-	const q = { start, end };
-	if (userId) q.userId = userId;
-	if (guests != null) q.guests = guests;
-	if (contactName) q.contactName = contactName;
-	if (contactPhone) q.contactPhone = contactPhone;
-	if (remark) q.remark = remark;
-	if (hotelId) q.hotelId = hotelId;
-	return request(`/rooms/${roomId}/book`, { method: 'POST', query: q });
+export async function createBooking({
+	roomId,
+	userId,
+	start,
+	end,
+	guests,
+	contactName,
+	contactPhone,
+	remark,
+	hotelId,
+	paymentMethod,
+	paymentChannel,
+	payNow,
+	referenceNo
+}) {
+	const body = {
+		start: formatDateTimeInput(start),
+		end: formatDateTimeInput(end),
+		userId,
+		guests,
+		contactName,
+		contactPhone,
+		remark,
+		hotelId,
+		paymentMethod,
+		paymentChannel,
+		payNow,
+		referenceNo
+	};
+	return request(`/rooms/${roomId}/book`, { method: 'POST', json: true, body });
 }
 
 // Admin booking ops
@@ -331,6 +406,35 @@ export async function adminListBookings({ page = 1, size = 10, status, userId, r
 	return normalized;
 }
 
+export async function adminListRoomInstances({ hotelId, roomTypeId, status } = {}) {
+	const query = { hotelId, roomTypeId, status };
+	const data = await request('/rooms/instances', { query });
+	if (!Array.isArray(data)) {
+		return [];
+	}
+	return data.map(normalizeRoomInstance).filter(Boolean);
+}
+
+export async function fetchRoomOccupancyOverview({ start, end, hotelId, roomTypeId } = {}) {
+	const query = {};
+	if (start) query.start = start;
+	if (end) query.end = end;
+	if (hotelId != null) query.hotelId = hotelId;
+	if (roomTypeId != null) query.roomTypeId = roomTypeId;
+	const data = await request('/rooms/occupancy-overview', { query });
+	if (data && typeof data === 'object') {
+		const normalized = { ...data };
+		if (Array.isArray(normalized.bookings)) {
+			normalized.bookings = normalized.bookings.map(normalizeBooking).filter(Boolean);
+		}
+		if (Array.isArray(normalized.roomInstances)) {
+			normalized.roomInstances = normalized.roomInstances.map(normalizeRoomInstance).filter(Boolean);
+		}
+		return normalized;
+	}
+	return { bookings: [], roomInstances: [] };
+}
+
 export async function getBookingDetail(id) {
 	const data = await request(`/bookings/${id}`);
 	return normalizeBooking(data);
@@ -364,4 +468,29 @@ export async function getPrimaryHotel() {
 export async function getHotelById(id) {
 	const data = await request(`/hotel/${id}`, { auth: false, redirectOn401: false });
 	return normalizeHotel(data);
+}
+
+// Wallet & profile
+export async function getWalletSummary(limit = 10) {
+	return request('/wallet/me', { query: { limit } });
+}
+
+export async function rechargeWallet({ amount, channel, referenceNo, remark }) {
+	return request('/wallet/recharge', { method: 'POST', json: true, body: { amount, channel, referenceNo, remark } });
+}
+
+export async function getMyProfile() {
+	return request('/users/me/profile', { method: 'GET' });
+}
+
+export async function updateMyProfile(payload) {
+	return request('/users/me/profile', { method: 'PUT', json: true, body: payload });
+}
+
+export async function getVipPricingSnapshot() {
+	return request('/pricing/vip', { method: 'GET', auth: false, redirectOn401: false });
+}
+
+export async function getRoomVipRates(roomTypeId) {
+	return request(`/pricing/vip/rooms/${roomTypeId}`, { method: 'GET', auth: false, redirectOn401: false });
 }

@@ -13,6 +13,46 @@
   }
 }
 
+.stay-range-input.ant-input {
+  cursor: pointer;
+  background-color: #fff;
+}
+
+.stay-range-input.ant-input[disabled] {
+  cursor: not-allowed;
+}
+
+.stay-range-popover .ant-popover-inner {
+  padding: 0;
+}
+
+.stay-range-popover-content {
+  padding: 16px 16px 12px;
+  width: min(560px, calc(100vw - 48px));
+}
+
+.stay-range-popover-content--compact {
+  width: min(360px, calc(100vw - 32px));
+}
+
+.stay-range-popover-content .rdrDefinedRangesWrapper {
+  display: none;
+}
+
+.stay-range-popover-content .stay-range-popover-actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.stay-range-popover-content .rdrCalendarWrapper {
+  box-shadow: none;
+}
+
+.stay-range-popover-content--compact .rdrCalendarWrapper {
+  width: 100%;
+}
+
 .App-header {
   background-color: #282c34;
   min-height: 100vh;
@@ -35,4 +75,44 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+.room-instance-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.room-instance-cell {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  font-weight: 500;
+}
+
+.room-instance-cell:hover,
+.room-instance-cell:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+.room-instance-cell:focus {
+  outline: none;
+}
+
+.room-instance-number {
+  font-size: 15px;
+}
+
+.room-instance-status {
+  font-size: 13px;
+  opacity: 0.8;
 }

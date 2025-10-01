@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate, useParams, useLocation } from 'react-router-dom';
 import AntLayout from './components/AntLayout';
 import RoomListPage from './pages/RoomList';
 import RoomDetailPage from './pages/RoomDetail';
@@ -8,8 +8,8 @@ import Login from './pages/Login';
 import { ProtectedRoute, RoleRoute } from './routes/guards';
 import { AuthProvider } from './context/AuthContext';
 import ErrorPage from './pages/ErrorPage';
-import MyBookings from './pages/UserDashboard';
 import HotelLanding from './pages/HotelLanding';
+import AccountCenter from './pages/AccountCenter';
 
 function RoomListRoute() {
   const navigate = useNavigate();
@@ -19,7 +19,10 @@ function RoomListRoute() {
 function RoomDetailRoute() {
   const navigate = useNavigate();
   const { id } = useParams();
-  return <RoomDetailPage id={id} onBack={()=>navigate('/rooms')} />;
+  const location = useLocation();
+  const search = React.useMemo(() => new URLSearchParams(location.search), [location.search]);
+  const initialShowVr = search.get('vr') === '1';
+  return <RoomDetailPage id={id} onBack={()=>navigate('/rooms')} initialShowVr={initialShowVr} />;
 }
 
 function HotelLandingRoute() {
@@ -39,7 +42,7 @@ export default function App(){
             <Route path="/rooms" element={<RoomListRoute/>} />
             <Route path="/rooms/:id" element={<RoomDetailRoute/>} />
             <Route path="/admin" element={<RoleRoute role="ADMIN"><AdminDemo/></RoleRoute>} />
-            <Route path="/me/bookings" element={<ProtectedRoute><MyBookings/></ProtectedRoute>} />
+            <Route path="/me/profile" element={<ProtectedRoute><AccountCenter/></ProtectedRoute>} />
           </Routes>
         </AntLayout>
       </AuthProvider>

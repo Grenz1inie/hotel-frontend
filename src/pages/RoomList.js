@@ -1,7 +1,8 @@
 import React from 'react';
 import { Card, Row, Col, Tag, Typography, Space, Input, Empty, Skeleton, Button, Tooltip } from 'antd';
+import { PlayCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { getRooms, getImageList } from '../services/api';
+import { getRooms, getImageList, getVipPricingSnapshot } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const { Title, Text } = Typography;
@@ -10,6 +11,7 @@ export default function RoomList({ onOpen }) {
   const [rooms, setRooms] = React.useState([]);
   const [loading, setLoading] = React.useState(false);
   const [q, setQ] = React.useState('');
+  const [pricing, setPricing] = React.useState(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -27,6 +29,56 @@ export default function RoomList({ onOpen }) {
   }, [navigate]);
 
   React.useEffect(() => { load(); }, [load]);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const data = await getVipPricingSnapshot();
+        setPricing(data);
+      } catch (e) {
+        console.warn('无法加载会员折扣策略', e);
+      }
+    })();
+  }, []);
+
+  const discountLookup = React.useMemo(() => {
+    if (!pricing) return { base: {}, rooms: new Map() };
+    const baseRates = Object.entries(pricing.baseRates || {}).reduce((acc, [level, rate]) => {
+      const key = Number(level);
+      acc[key] = typeof rate === 'number' ? rate : Number(rate);
+      return acc;
+    }, {});
+    const roomMap = new Map();
+    const roomsList = Array.isArray(pricing.rooms) ? pricing.rooms : [];
+    roomsList.forEach((item) => {
+      const roomId = Number(item.roomTypeId ?? item.room_type_id ?? item.id);
+      const discounts = item.discounts || {};
+      const normalized = Object.entries(discounts).reduce((acc, [lvl, rate]) => {
+        const key = Number(lvl);
+        acc[key] = typeof rate === 'number' ? rate : Number(rate);
+        return acc;
+      }, {});
+      if (!Number.isNaN(roomId)) {
+        roomMap.set(roomId, normalized);
+      }
+    });
+    return { base: baseRates, rooms: roomMap };
+  }, [pricing]);
+
+  const computeDiscountedPrice = React.useCallback((room) => {
+    if (!user || user.vipLevel == null) return null;
+    const vipLevel = Number(user.vipLevel);
+    if (Number.isNaN(vipLevel)) return null;
+    const baseRate = discountLookup.base[vipLevel] ?? 1;
+    const specific = discountLookup.rooms.get(Number(room.id)) || {};
+    const rate = specific[vipLevel] ?? baseRate ?? 1;
+    const basePrice = Number(room.pricePerNight);
+    if (Number.isNaN(basePrice)) return null;
+    return {
+      rate,
+      price: Number((basePrice * rate).toFixed(2))
+    };
+  }, [discountLookup, user]);
 
   const sanitizedRooms = React.useMemo(
     () => rooms.filter((item) => item && typeof item === 'object'),
@@ -84,6 +136,7 @@ export default function RoomList({ onOpen }) {
             const available = Number.isFinite(Number(r.availableCount)) ? Number(r.availableCount) : 0;
             const total = Number.isFinite(Number(r.totalCount)) ? Number(r.totalCount) : 0;
             const price = Number(r.pricePerNight);
+            const discountInfo = computeDiscountedPrice(r);
             const amenities = Array.isArray(r.amenities) ? r.amenities.slice(0, 3) : [];
             const isActive = r.isActive !== undefined ? !!r.isActive : true;
             const areaValue = Number(r.areaSqm);
@@ -96,6 +149,19 @@ export default function RoomList({ onOpen }) {
                   hoverable
                   cover={<img alt={r.name} src={cover} style={{ height: 180, objectFit: 'cover' }} />}
                   onClick={() => onOpen(r.id)}
+                  actions={[
+                    <Button
+                      key="vr"
+                      type="link"
+                      icon={<PlayCircleOutlined />}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        navigate(`/rooms/${r.id}?vr=1`);
+                      }}
+                    >
+                      VR 看房
+                    </Button>
+                  ]}
                 >
                   <Space direction="vertical" style={{ width: '100%' }} size={4}>
                     <Title level={5} style={{ margin: 0 }}>{r.name}</Title>
@@ -104,7 +170,12 @@ export default function RoomList({ onOpen }) {
                       <Tag color={available > 0 ? 'green' : 'red'}>{available}/{total} 可用</Tag>
                       {!isActive && <Tag color="magenta">已下架</Tag>}
                     </Space>
-                    <Text type="secondary">¥{Number.isNaN(price) ? r.pricePerNight : price.toFixed(2)} / 晚 · 最多 {maxGuests ?? '—'} 人</Text>
+                    <Space direction="vertical" size={2}>
+                      <Text type="secondary">¥{Number.isNaN(price) ? r.pricePerNight : price.toFixed(2)} / 晚 · 最多 {maxGuests ?? '—'} 人</Text>
+                      {discountInfo && discountInfo.rate < 1 && (
+                        <Text type="success">VIP 会员价：¥{discountInfo.price.toFixed(2)}（折扣 {Math.round(discountInfo.rate * 100)}%）</Text>
+                      )}
+                    </Space>
                     <Text type="secondary">{areaDisplay != null ? `${areaDisplay} ㎡` : '面积未知'} · {r.bedType || '床型未设置'}</Text>
                     {amenities.length > 0 && (
                       <Space size={[4, 4]} wrap>

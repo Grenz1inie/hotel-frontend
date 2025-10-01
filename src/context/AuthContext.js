@@ -77,7 +77,20 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('auth:token');
   }, []);
 
-  const value = React.useMemo(() => ({ user, token, login, logout, register, isAuthed: !!user, role: user?.role }), [user, token, login, logout, register]);
+  const updateUser = React.useCallback((patch) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem('auth:user', JSON.stringify(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  }, []);
+
+  const value = React.useMemo(() => ({ user, token, login, logout, register, updateUser, isAuthed: !!user, role: user?.role }), [user, token, login, logout, register, updateUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

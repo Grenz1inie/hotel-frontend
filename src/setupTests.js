@@ -4,6 +4,16 @@
 // learn more: https://github.com/testing-library/jest-dom
 import '@testing-library/jest-dom';
 
+jest.mock('react-photo-sphere-viewer', () => {
+	const React = require('react');
+	return {
+		ReactPhotoSphereViewer: React.forwardRef((props, ref) => {
+			const { children, ...rest } = props || {};
+			return React.createElement('div', { 'data-testid': 'mock-photo-sphere-viewer', ref, ...rest }, children || null);
+		}),
+	};
+}, { virtual: true });
+
 if (!window.matchMedia) {
 	Object.defineProperty(window, 'matchMedia', {
 		writable: true,

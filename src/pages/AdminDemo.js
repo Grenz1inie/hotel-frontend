@@ -18,16 +18,195 @@ import {
 	Dropdown,
 	Input,
 	Modal,
+	Descriptions,
+	Divider,
+	Empty,
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, createBooking, getRoomAvailability } from '../services/api';
+import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, fetchRoomOccupancyOverview } from '../services/api';
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
 import { DownOutlined } from '@ant-design/icons';
+import { BOOKING_STATUS_META, getBookingStatusMeta, getPaymentStatusLabel, getPaymentMethodLabel } from '../constants/booking';
+import { getRoomStatusMeta } from '../constants/room';
 
 const { Title, Text } = Typography;
 
 const EMPTY_ORDERS = { items: [], page: 1, size: 10, total: 0 };
+	<Modal
+		open={roomTypeDetailVisible}
+		title={roomTypeDetailTarget ? `${roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`} · 入住规划` : '房型入住规划'}
+		width="88vw"
+		onCancel={closeRoomTypeDetail}
+		footer={[
+			roomTypeDetailTarget ? (
+				<Button
+					key="refresh"
+					onClick={() => roomTypeDetailTarget && openRoomTypeDetail(roomTypeDetailTarget)}
+					loading={roomTypeDetailLoading}
+				>
+					重新加载
+				</Button>
+			) : null,
+			<Button key="close" onClick={closeRoomTypeDetail}>
+				关闭
+			</Button>,
+		].filter(Boolean)}
+	>
+		<Spin spinning={roomTypeDetailLoading}>
+			{roomTypeDetailTarget ? (
+				<Space direction="vertical" size={16} style={{ width: '100%' }}>
+					<Space wrap>
+						<Text strong>{roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`}</Text>
+						<Text type="secondary">房型ID：{roomTypeDetailTarget.id}</Text>
+						{roomTypeDetailTarget.hotelId != null ? (
+							<Text type="secondary">酒店ID：{roomTypeDetailTarget.hotelId}</Text>
+						) : null}
+						{roomTypeDetailTarget.type ? <Tag color="blue">{roomTypeDetailTarget.type}</Tag> : null}
+						<Text type="secondary">时间范围：{weekRangeText}</Text>
+					</Space>
+					<div style={{ overflowX: 'auto' }}>
+						<div style={{ minWidth: LABEL_WIDTH + timelineWidth }}>
+							<div style={{ display: 'flex' }}>
+								<div style={{ width: LABEL_WIDTH, padding: '8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
+									<Text strong>房间</Text>
+								</div>
+								<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_DAYS}, ${HOURS_PER_DAY * CELL_WIDTH}px)` }}>
+									{timelineDays.map(({ date, label }) => (
+										<div
+											key={date.valueOf()}
+											style={{
+												textAlign: 'center',
+												padding: '8px 0',
+												borderRight: '1px solid #d9d9d9',
+												borderBottom: '1px solid #d9d9d9',
+												background: '#fafafa',
+											}}
+										>
+											<div>{label}</div>
+											<div style={{ fontSize: 12, color: '#999' }}>{date.format('YYYY-MM-DD')}</div>
+										</div>
+									))}
+								</div>
+							</div>
+							<div style={{ display: 'flex' }}>
+								<div style={{ width: LABEL_WIDTH, padding: '4px 8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
+									<Text type="secondary">小时</Text>
+								</div>
+								<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_HOURS}, ${CELL_WIDTH}px)` }}>
+									{timelineHours.map((hour, idx) => (
+										<div
+											key={hour.valueOf()}
+											style={{
+												textAlign: 'center',
+												fontSize: 12,
+												padding: '2px 0',
+												borderRight: '1px solid #f0f0f0',
+												borderBottom: '1px solid #f0f0f0',
+												background: idx % HOURS_PER_DAY === 0 ? '#fafafa' : '#fff',
+											}}
+										>
+											{hour.format('HH')}
+										</div>
+									))}
+								</div>
+							</div>
+							{roomTypeDetailRooms.length === 0 ? (
+								<div style={{ padding: '48px 0', borderBottom: '1px solid #f0f0f0' }}>
+									<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无房间数据" />
+								</div>
+							) : (
+								roomTypeDetailRooms.map((room) => {
+									const roomKey = room.id ?? room.roomId ?? `${room.roomTypeId || roomTypeDetailTarget.id}-${room.roomNumber || 'unknown'}`;
+									const roomBookings = roomTypeDetailBookingsByRoom.get(room.id ?? room.roomId) || [];
+									const meta = getRoomStatusMeta(room?.status);
+									return (
+										<div key={roomKey} style={{ display: 'flex', alignItems: 'stretch' }}>
+											<div style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
+												<Space direction="vertical" size={0}>
+													<Text strong>房间 {room.roomNumber || room.id || '未知'}</Text>
+													<Text type="secondary" style={{ fontSize: 12 }}>ID #{room.id ?? room.roomId ?? '—'} · 状态：{meta.label || '未知'}</Text>
+												</Space>
+											</div>
+											<div
+												style={{
+													width: timelineWidth,
+													position: 'relative',
+													borderBottom: '1px solid #f0f0f0',
+													minHeight: 56,
+													background: `repeating-linear-gradient(to right, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent ${CELL_WIDTH}px)`
+												}}
+											>
+												{roomBookings.length === 0 ? null : roomBookings.map((booking) => {
+													const bookingStart = dayjs(booking.startTime);
+													const bookingEnd = dayjs(booking.endTime);
+													const effectiveStart = bookingStart.isBefore(timelineStart) ? timelineStart : bookingStart;
+													const effectiveEnd = bookingEnd.isAfter(timelineEnd) ? timelineEnd : bookingEnd;
+													if (!effectiveEnd.isAfter(effectiveStart)) return null;
+													const startOffset = effectiveStart.diff(timelineStart, 'minute') / 60;
+													const duration = effectiveEnd.diff(effectiveStart, 'minute') / 60;
+													const left = startOffset * CELL_WIDTH;
+													const width = Math.max(duration * CELL_WIDTH, 6);
+													const metaInfo = getBookingStatusMeta(booking.status);
+													const color = metaInfo.color || STATUS_COLOR_FALLBACK;
+													const tooltipTitle = (
+														<div>
+															<div>订单 #{booking.id}</div>
+															<div>房间：{room.roomNumber || room.id || booking.roomId}</div>
+															<div>状态：{metaInfo.label}</div>
+															<div>时间：{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
+															{booking.contactName && <div>联系人：{booking.contactName}</div>}
+															{booking.contactPhone && <div>电话：{booking.contactPhone}</div>}
+														</div>
+													);
+													return (
+														<Tooltip key={booking.id} title={tooltipTitle} overlayInnerStyle={{ minWidth: 220 }}>
+															<div
+																style={{
+																	position: 'absolute',
+																	left,
+																	top: 6,
+																	height: 'calc(100% - 12px)',
+																	width,
+																	minWidth: 8,
+																	backgroundColor: color,
+																	color: '#fff',
+																	borderRadius: 6,
+																	padding: '4px 8px',
+																	display: 'flex',
+																	flexDirection: 'column',
+																	justifyContent: 'center',
+																	gap: 2,
+																	boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+																	overflow: 'hidden',
+																	textOverflow: 'ellipsis',
+																	whiteSpace: 'nowrap',
+																}}
+																>
+																	<div style={{ fontWeight: 600 }}>#{booking.id} · {metaInfo.label}</div>
+																	<div style={{ fontSize: 12 }}>{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
+																</div>
+															</Tooltip>
+													);
+												})}
+											</div>
+										</div>
+									);
+								})
+							)}
+						</div>
+					</div>
+					<Space wrap>
+						{Object.entries(BOOKING_STATUS_META).map(([status, value]) => (
+							<Tag key={status} color={value.color}>{value.label}</Tag>
+						))}
+					</Space>
+				</Space>
+			) : (
+				<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择房型" />
+			)}
+		</Spin>
+	</Modal>
 
 const TOTAL_DAYS = 7;
 const HOURS_PER_DAY = 24;
@@ -35,14 +214,7 @@ const TOTAL_HOURS = TOTAL_DAYS * HOURS_PER_DAY;
 const CELL_WIDTH = 36; // px per hour
 const LABEL_WIDTH = 180; // px for room info column
 
-const STATUS_COLORS = {
-	PENDING: '#faad14',
-	CONFIRMED: '#52c41a',
-	CHECKED_IN: '#13c2c2',
-	CHECKED_OUT: '#1677ff',
-	CANCELLED: '#f5222d',
-	REFUNDED: '#722ed1',
-};
+const STATUS_COLOR_FALLBACK = '#597ef7';
 
 export default function AdminDemo() {
 	const [rooms, setRooms] = React.useState([]);
@@ -54,10 +226,16 @@ export default function AdminDemo() {
 	const [timelineStart, setTimelineStart] = React.useState(() => dayjs().startOf('day'));
 	const [timelineLoading, setTimelineLoading] = React.useState(false);
 	const [timelineBookings, setTimelineBookings] = React.useState([]);
-	const [bookingModalOpen, setBookingModalOpen] = React.useState(false);
-	const [bookingSubmitting, setBookingSubmitting] = React.useState(false);
-	const [manualBookingForm] = Form.useForm();
+	const [roomInstances, setRoomInstances] = React.useState([]);
+	const [roomInstancesLoading, setRoomInstancesLoading] = React.useState(false);
+	const [roomTypeDetailVisible, setRoomTypeDetailVisible] = React.useState(false);
+	const [roomTypeDetailLoading, setRoomTypeDetailLoading] = React.useState(false);
+	const [roomTypeDetailTarget, setRoomTypeDetailTarget] = React.useState(null);
+	const [roomTypeDetailRooms, setRoomTypeDetailRooms] = React.useState([]);
+	const [roomTypeDetailBookings, setRoomTypeDetailBookings] = React.useState([]);
+	const [selectedRoom, setSelectedRoom] = React.useState(null);
 	const navigate = useNavigate();
+
 
 	const load = React.useCallback(async () => {
 		try {
@@ -75,26 +253,38 @@ export default function AdminDemo() {
 
 	const statusPriority = React.useMemo(() => ({
 		PENDING: 1,
-		CONFIRMED: 2,
-		CHECKED_IN: 3,
-		CHECKED_OUT: 4,
-		CANCELLED: 5,
-		REFUNDED: 6,
+		PENDING_CONFIRMATION: 2,
+		PENDING_PAYMENT: 3,
+		CONFIRMED: 4,
+		CHECKED_IN: 5,
+		CHECKED_OUT: 6,
+		CANCELLED: 7,
+		REFUNDED: 8,
 	}), []);
+
+	const resolveStatusPriority = React.useCallback((rawStatus) => {
+		if (!rawStatus) return 99;
+		const key = typeof rawStatus === 'string' ? rawStatus.trim().toUpperCase() : rawStatus;
+		return statusPriority[key] ?? 99;
+	}, [statusPriority]);
 
 	const sortBookings = React.useCallback((list = []) => {
 		return [...list]
 			.filter(Boolean)
 			.sort((a, b) => {
-				const pa = statusPriority[a?.status] ?? 99;
-				const pb = statusPriority[b?.status] ?? 99;
+				const pa = resolveStatusPriority(a?.status);
+				const pb = resolveStatusPriority(b?.status);
 				if (pa !== pb) return pa - pb;
 				const sa = a?.startTime ? dayjs(a.startTime).valueOf() : 0;
 				const sb = b?.startTime ? dayjs(b.startTime).valueOf() : 0;
 				if (sa !== sb) return sa - sb;
 				return (a?.id ?? 0) - (b?.id ?? 0);
 			});
-	}, [statusPriority]);
+	}, [resolveStatusPriority]);
+
+	const statusOptions = React.useMemo(() => Object.entries(BOOKING_STATUS_META)
+		.sort(([a], [b]) => resolveStatusPriority(a) - resolveStatusPriority(b))
+		.map(([value, meta]) => ({ label: meta.label, value })), [resolveStatusPriority]);
 
 	const loadOrders = React.useCallback(async ({ page: overridePage, size: overrideSize, filters } = {}) => {
 			try {
@@ -136,32 +326,119 @@ export default function AdminDemo() {
 			}
 		}, [orderFilters, navigate, sortBookings, orders.page, orders.size]);
 
-	const loadTimeline = React.useCallback(async (startAt) => {
+	const loadOccupancy = React.useCallback(async (startAt) => {
 		if (!startAt) return;
 		const startDay = startAt.startOf('day');
 		const endDay = startDay.add(TOTAL_DAYS, 'day');
 		try {
 			setTimelineLoading(true);
-			const res = await adminListBookings({
-				page: 1,
-				size: 500,
+			setRoomInstancesLoading(true);
+			const res = await fetchRoomOccupancyOverview({
 				start: startDay.toISOString(),
 				end: endDay.toISOString(),
 			});
-			setTimelineBookings(res?.items ?? []);
+			setTimelineBookings(Array.isArray(res?.bookings) ? res.bookings : []);
+			setRoomInstances(Array.isArray(res?.roomInstances) ? res.roomInstances : []);
 		} catch (e) {
-			const msg = e?.data?.message || '入住规划加载失败';
-			navigate('/error', { state: { status: String(e.status || 500), title: '入住规划加载失败', subTitle: msg, backTo: '/admin' }, replace: true });
+			const msg = e?.data?.message || '房间入住规划加载失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '房间入住规划加载失败', subTitle: msg, backTo: '/admin' }, replace: true });
 		} finally {
 			setTimelineLoading(false);
+			setRoomInstancesLoading(false);
 		}
 	}, [navigate]);
 
-		React.useEffect(() => { loadOrders(); }, [loadOrders]);
+	const openRoomTypeDetail = React.useCallback(async (roomType) => {
+		if (!roomType) return;
+		setRoomTypeDetailTarget(prev => {
+			if (prev && prev.id === roomType.id && prev.hotelId === roomType.hotelId && prev.name === roomType.name && prev.type === roomType.type) {
+				return prev;
+			}
+			return {
+				id: roomType.id,
+				hotelId: roomType.hotelId,
+				name: roomType.name,
+				type: roomType.type,
+			};
+		});
+		setRoomTypeDetailVisible(true);
+		setRoomTypeDetailLoading(true);
+		const startIso = timelineStart.startOf('day').toDate().toISOString();
+		const endIso = timelineEnd.toDate().toISOString();
+		try {
+			const res = await fetchRoomOccupancyOverview({
+				start: startIso,
+				end: endIso,
+				roomTypeId: roomType.id,
+				hotelId: roomType.hotelId,
+			});
+			const fetchedBookings = Array.isArray(res?.bookings) ? res.bookings : [];
+			const fetchedRooms = Array.isArray(res?.roomInstances) ? res.roomInstances : [];
+			const fallbackRooms = roomInstances.filter((ri) => ri.roomTypeId === roomType.id);
+			const mergedMap = new Map();
+			[...fetchedRooms, ...fallbackRooms].forEach((ri) => {
+				if (!ri) return;
+				const key = ri.id ?? `${ri.roomTypeId || roomType.id}-${ri.roomNumber || ''}`;
+				if (!mergedMap.has(key)) {
+					mergedMap.set(key, ri);
+				}
+			});
+			fetchedBookings.forEach((booking) => {
+				if (!booking || booking.roomId == null) return;
+				if (!mergedMap.has(booking.roomId)) {
+					mergedMap.set(booking.roomId, {
+						id: booking.roomId,
+						roomId: booking.roomId,
+						roomTypeId: booking.roomTypeId ?? roomType.id,
+						hotelId: booking.hotelId ?? roomType.hotelId,
+						roomNumber: booking.roomNumber ?? booking.roomId,
+						status: booking.roomStatus,
+					});
+				}
+			});
+			const mergedRooms = Array.from(mergedMap.values()).sort((a, b) => {
+				const aNo = a?.roomNumber ?? '';
+				const bNo = b?.roomNumber ?? '';
+				if (aNo && bNo) {
+					return String(aNo).localeCompare(String(bNo), undefined, { numeric: true, sensitivity: 'base' });
+				}
+				if (a?.id != null && b?.id != null) {
+					return a.id - b.id;
+				}
+				return String(aNo).localeCompare(String(bNo));
+			});
+			setRoomTypeDetailRooms(mergedRooms);
+			setRoomTypeDetailBookings(fetchedBookings);
+		} catch (e) {
+			const msg = e?.data?.message || '房型入住规划加载失败';
+			message.error(msg);
+			setRoomTypeDetailRooms([]);
+			setRoomTypeDetailBookings([]);
+		} finally {
+			setRoomTypeDetailLoading(false);
+		}
+	}, [timelineStart, timelineEnd, roomInstances]);
+
+	const refreshOverview = React.useCallback(async () => {
+		await loadOccupancy(timelineStart);
+		if (roomTypeDetailVisible && roomTypeDetailTarget) {
+			await openRoomTypeDetail(roomTypeDetailTarget);
+		}
+	}, [loadOccupancy, timelineStart, roomTypeDetailVisible, roomTypeDetailTarget, openRoomTypeDetail]);
+
+	const closeRoomTypeDetail = React.useCallback(() => {
+		setRoomTypeDetailVisible(false);
+		setRoomTypeDetailLoading(false);
+		setRoomTypeDetailTarget(null);
+		setRoomTypeDetailRooms([]);
+		setRoomTypeDetailBookings([]);
+	}, []);
+
+	React.useEffect(() => { loadOrders(); }, [loadOrders]);
 
 	React.useEffect(() => {
-		loadTimeline(timelineStart);
-	}, [timelineStart, loadTimeline]);
+		refreshOverview();
+	}, [refreshOverview]);
 
 	const timelineEnd = React.useMemo(() => timelineStart.add(TOTAL_DAYS, 'day'), [timelineStart]);
 	const timelineHours = React.useMemo(() => Array.from({ length: TOTAL_HOURS }, (_, i) => timelineStart.add(i, 'hour')), [timelineStart]);
@@ -181,8 +458,77 @@ export default function AdminDemo() {
 		});
 		return map;
 	}, [timelineBookings]);
+	const roomTypeDetailBookingsByRoom = React.useMemo(() => {
+		const map = new Map();
+		roomTypeDetailBookings.forEach((booking) => {
+			if (!booking || booking.roomId == null) return;
+			if (!map.has(booking.roomId)) {
+				map.set(booking.roomId, []);
+			}
+			map.get(booking.roomId).push(booking);
+		});
+		map.forEach((list) => {
+			list.sort((a, b) => {
+				const sa = dayjs(a.startTime).valueOf();
+				const sb = dayjs(b.startTime).valueOf();
+				if (sa !== sb) return sa - sb;
+				return (a?.id ?? 0) - (b?.id ?? 0);
+			});
+		});
+		return map;
+	}, [roomTypeDetailBookings]);
 	const timelineWidth = TOTAL_HOURS * CELL_WIDTH;
 	const weekRangeText = React.useMemo(() => `${timelineStart.format('YYYY-MM-DD')} ~ ${timelineStart.add(TOTAL_DAYS - 1, 'day').format('YYYY-MM-DD')}`, [timelineStart]);
+	const roomTypeMap = React.useMemo(() => {
+		const map = new Map();
+		rooms.forEach((room) => {
+			if (room?.id != null) {
+				map.set(room.id, room);
+			}
+		});
+		return map;
+	}, [rooms]);
+
+	const groupedRooms = React.useMemo(() => {
+		const groups = [];
+		rooms.forEach((roomType) => {
+			const bucket = roomInstances.filter((ri) => ri.roomTypeId === roomType.id);
+			if (bucket.length) {
+				groups.push({ roomType, rooms: bucket });
+			}
+		});
+		const fallback = new Map();
+		roomInstances.forEach((ri) => {
+			if (!roomTypeMap.has(ri.roomTypeId)) {
+				if (!fallback.has(ri.roomTypeId)) {
+					fallback.set(ri.roomTypeId, []);
+				}
+				fallback.get(ri.roomTypeId).push(ri);
+			}
+		});
+		fallback.forEach((list, key) => {
+			groups.push({ roomType: { id: key, name: `房型 #${key}`, hotelId: list[0]?.hotelId }, rooms: list });
+		});
+		return groups;
+	}, [rooms, roomInstances, roomTypeMap]);
+
+	const renderRoomCell = React.useCallback((room) => {
+		const meta = getRoomStatusMeta(room?.status);
+		const bgColor = meta.bgColor || '#fafafa';
+		const textColor = meta.color || '#595959';
+		return (
+			<button
+				type="button"
+				key={room.id ?? `${room.roomTypeId}-${room.roomNumber}`}
+				className="room-instance-cell"
+				onClick={() => setSelectedRoom(room)}
+				style={{ backgroundColor: bgColor, color: textColor }}
+			>
+				<span className="room-instance-number">房间 {room.roomNumber || room.id}</span>
+				<span className="room-instance-status">{meta.label}</span>
+			</button>
+		);
+	}, [setSelectedRoom]);
 
 	const doAdjust = async (id) => {
 		const v = totalInput[id];
@@ -197,7 +543,7 @@ export default function AdminDemo() {
 			} else {
 				message.success('更新成功');
 				load();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
 			const msg = e?.data?.message || '更新失败';
@@ -213,7 +559,7 @@ export default function AdminDemo() {
 			} else {
 				message.success('已确认');
 				loadOrders();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
 			const msg = e?.data?.message || '确认失败';
@@ -229,7 +575,7 @@ export default function AdminDemo() {
 			} else {
 				message.success('已退房');
 				loadOrders();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
 			const msg = e?.data?.message || '退房失败';
@@ -241,15 +587,15 @@ export default function AdminDemo() {
 		try {
 			const res = await checkinBooking(id);
 			if (!res) {
-				message.error('办理入住失败');
+				message.error('入住失败');
 			} else {
 				message.success('已标记入住');
 				loadOrders();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
-			const msg = e?.data?.message || '办理入住失败';
-			navigate('/error', { state: { status: String(e.status || 500), title: '办理入住失败', subTitle: msg, backTo: '/admin' }, replace: true });
+			const msg = e?.data?.message || '入住失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '入住失败', subTitle: msg, backTo: '/admin' }, replace: true });
 		}
 	};
 
@@ -259,9 +605,9 @@ export default function AdminDemo() {
 			if (!res) {
 				message.error('拒绝失败');
 			} else {
-				message.success('已拒绝订单');
+				message.success('已拒绝');
 				loadOrders();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
 			const msg = e?.data?.message || '拒绝失败';
@@ -275,102 +621,16 @@ export default function AdminDemo() {
 			if (!res) {
 				message.error('删除失败');
 			} else {
-				message.success('已删除订单');
+				message.success('已删除');
 				loadOrders();
-				loadTimeline(timelineStart);
+				refreshOverview();
 			}
 		} catch (e) {
 			const msg = e?.data?.message || '删除失败';
 			navigate('/error', { state: { status: String(e.status || 500), title: '删除失败', subTitle: msg, backTo: '/admin' }, replace: true });
 		}
 	};
-
-	const openBookingModal = React.useCallback(() => {
-		if (!rooms.length) {
-			message.warning('当前没有可用房型');
-			return;
-		}
-		const defaultStart = dayjs().hour(14).minute(0).second(0);
-		const defaultEnd = dayjs().add(1, 'day').hour(12).minute(0).second(0);
-		const primaryRoom = rooms[0];
-		manualBookingForm.resetFields();
-		manualBookingForm.setFieldsValue({
-			roomId: primaryRoom?.id,
-			range: [defaultStart, defaultEnd],
-			guests: Math.max(1, Number(primaryRoom?.maxGuests) || 1),
-			contactName: '',
-			contactPhone: '',
-			remark: '',
-			userId: undefined,
-		});
-		setBookingModalOpen(true);
-	}, [manualBookingForm, rooms]);
-
-	const handleManualBooking = React.useCallback(async () => {
-		try {
-			const values = await manualBookingForm.validateFields();
-			const [startMoment, endMoment] = values.range || [];
-			if (!startMoment || !endMoment) {
-				message.warning('请选择开始和结束时间');
-				return;
-			}
-			if (!values.roomId) {
-				message.warning('请选择房型');
-				return;
-			}
-			const start = startMoment.toISOString();
-			const end = endMoment.toISOString();
-			setBookingSubmitting(true);
-			try {
-				const availability = await getRoomAvailability(values.roomId, { start, end });
-				if (availability && availability.available === false) {
-					message.error('该时段库存不足，请选择其他时间');
-					return;
-				}
-			} catch (availabilityError) {
-				// availability检查失败时保留后端校验结果，继续创建预约
-				console.warn('availability check failed', availabilityError);
-			}
-			const targetRoom = rooms.find(room => room.id === values.roomId);
-			const payload = {
-				roomId: values.roomId,
-				userId: values.userId || undefined,
-				start,
-				end,
-				guests: values.guests,
-				contactName: values.contactName,
-				contactPhone: values.contactPhone,
-				remark: values.remark,
-				hotelId: targetRoom?.hotelId,
-			};
-			const res = await createBooking(payload);
-			if (!res) {
-				message.error('创建预约失败');
-				return;
-			}
-			const bookingIdText = res.id ? ` #${res.id}` : '';
-			const messageParts = [`预约创建成功${bookingIdText}`];
-			if (!values.userId && res.userId) {
-				messageParts.push(`已为客户创建账号 (ID: ${res.userId}，初始密码：123456)`);
-			}
-			message.success(messageParts.join('，'));
-			setBookingModalOpen(false);
-			manualBookingForm.resetFields();
-			loadOrders();
-			loadTimeline(timelineStart);
-		} catch (error) {
-			if (error?.errorFields) {
-				// 表单校验错误已在表单项中展示
-				return;
-			}
-			console.error(error);
-			const msg = error?.data?.message || '创建预约失败';
-			message.error(msg);
-		} finally {
-			setBookingSubmitting(false);
-		}
-	}, [createBooking, getRoomAvailability, loadOrders, loadTimeline, manualBookingForm, rooms, timelineStart]);
-
+	
 	const orderColumns = [
 		{
 			title: '操作',
@@ -445,20 +705,19 @@ export default function AdminDemo() {
 		} },
 		{ title: '联系人', dataIndex: 'contactName', key: 'contactName', render: v => v || '—' },
 		{ title: '电话', dataIndex: 'contactPhone', key: 'contactPhone', render: v => v || '—' },
-		{ title: '状态', dataIndex: 'status', key: 'status', render: s => <Tag color={STATUS_COLORS[s] || 'default'}>{s}</Tag> },
+		{ title: '支付', key: 'payment', render: (_, record) => (
+			<Space direction="vertical" size={0}>
+				<Text>{getPaymentStatusLabel(record.paymentStatus)}</Text>
+				{record.paymentMethod ? <Text type="secondary">{getPaymentMethodLabel(record.paymentMethod)}</Text> : null}
+			</Space>
+		)},
+		{ title: '状态', dataIndex: 'status', key: 'status', sorter: (a, b) => resolveStatusPriority(a?.status) - resolveStatusPriority(b?.status), defaultSortOrder: 'ascend', render: s => { const meta = getBookingStatusMeta(s); return <Tag color={meta.color}>{meta.label}</Tag>; } },
 	];
 
 	return (
 		<Space direction="vertical" size={16} style={{ width: '100%' }}>
 			<Title level={3} style={{ margin: 0 }}>管理（演示）</Title>
-			<Card
-				title="订单管理"
-				extra={(
-					<Button type="primary" onClick={openBookingModal} disabled={!rooms.length}>
-						手动预约
-					</Button>
-				)}
-			>
+			<Card title="订单管理">
 				<Form
 					layout="inline"
 					onFinish={(vals) => {
@@ -479,14 +738,11 @@ export default function AdminDemo() {
 					}}
 				>
 					<Form.Item label="状态" name="status">
-						<Select allowClear style={{ width: 160 }} options={[
-							{ label: 'PENDING', value: 'PENDING' },
-							{ label: 'CONFIRMED', value: 'CONFIRMED' },
-							{ label: 'CHECKED_IN', value: 'CHECKED_IN' },
-							{ label: 'CHECKED_OUT', value: 'CHECKED_OUT' },
-							{ label: 'CANCELLED', value: 'CANCELLED' },
-							{ label: 'REFUNDED', value: 'REFUNDED' },
-						]} />
+						<Select
+							allowClear
+							style={{ width: 180 }}
+							options={statusOptions}
+						/>
 					</Form.Item>
 					<Form.Item label="用户ID" name="userId">
 						<InputNumber min={1} />
@@ -531,110 +787,16 @@ export default function AdminDemo() {
 						}
 					}}
 				/>
-				<Modal
-					title="手动帮助客户预约"
-					open={bookingModalOpen}
-					onCancel={() => {
-						setBookingModalOpen(false);
-						manualBookingForm.resetFields();
-					}}
-					onOk={handleManualBooking}
-					okText="创建预约"
-					cancelText="取消"
-					confirmLoading={bookingSubmitting}
-					destroyOnClose
-					maskClosable={!bookingSubmitting}
-					centered
-				>
-					<Form form={manualBookingForm} layout="vertical">
-						<Form.Item name="roomId" label="房型" rules={[{ required: true, message: '请选择房型' }] }>
-							<Select
-								showSearch
-								placeholder="请选择房型"
-								optionFilterProp="label"
-								options={rooms.map(room => ({
-									value: room.id,
-									label: `${room.name ?? room.type ?? '房型'} (#${room.id})`,
-								}))}
-							/>
-						</Form.Item>
-						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.roomId !== cur.roomId}>
-							{() => {
-								const pickedRoomId = manualBookingForm.getFieldValue('roomId');
-								const pickedRoom = rooms.find(room => room.id === pickedRoomId);
-								if (!pickedRoom) return null;
-								const available = Number(pickedRoom.availableCount);
-								const total = Number(pickedRoom.totalCount);
-								return (
-									<div style={{ marginBottom: 12 }}>
-										<Text type="secondary">
-											酒店 #{pickedRoom.hotelId ?? '—'} · 当前库存 {Number.isNaN(available) ? pickedRoom.availableCount ?? '未知' : available}/{Number.isNaN(total) ? pickedRoom.totalCount ?? '未知' : total}
-										</Text>
-									</div>
-								);
-							}}
-						</Form.Item>
-						<Form.Item
-							name="range"
-							label="入住与退房时间"
-							rules={[{ required: true, message: '请选择入住与退房时间' }]}
-						>
-							<DatePicker.RangePicker
-								showTime
-								format="YYYY-MM-DD HH:mm"
-								style={{ width: '100%' }}
-							/>
-						</Form.Item>
-						<Form.Item noStyle shouldUpdate={(prev, cur) => prev.roomId !== cur.roomId}>
-							{() => {
-								const pickedRoomId = manualBookingForm.getFieldValue('roomId');
-								const pickedRoom = rooms.find(room => room.id === pickedRoomId);
-								const maxGuestsValue = Number(pickedRoom?.maxGuests);
-								const maxGuests = Number.isFinite(maxGuestsValue) && maxGuestsValue > 0 ? maxGuestsValue : 10;
-								return (
-									<Form.Item
-										name="guests"
-										label="入住人数"
-										rules={[{ required: true, message: '请输入入住人数' }]}
-									>
-										<InputNumber min={1} max={maxGuests} style={{ width: '100%' }} placeholder={`请输入入住人数（最多 ${maxGuests} 人）`} />
-									</Form.Item>
-								);
-							}}
-						</Form.Item>
-						<Form.Item
-							name="userId"
-							label="关联用户ID"
-							tooltip="可选，如需关联已有会员账户"
-						>
-							<InputNumber min={1} style={{ width: '100%' }} placeholder="可选，填写现有用户ID" />
-						</Form.Item>
-						<Form.Item
-							name="contactName"
-							label="联系人姓名"
-							rules={[{ required: true, message: '请输入联系人姓名' }]}
-						>
-							<Input placeholder="请输入联系人姓名" />
-						</Form.Item>
-						<Form.Item
-							name="contactPhone"
-							label="联系电话"
-							rules={[{ required: true, message: '请输入联系电话' }]}
-						>
-							<Input placeholder="请输入联系电话" />
-						</Form.Item>
-						<Form.Item name="remark" label="备注">
-							<Input.TextArea rows={3} placeholder="可填写客户特殊需求" />
-						</Form.Item>
-						<Space direction="vertical" size={4}>
-							<Text type="secondary">若未填写“关联用户ID”，系统将依据联系电话为客户自动创建账号（初始密码：123456）。</Text>
-							<Text type="secondary">创建后将立即生成订单并占用对应房型库存，请确认信息准确无误。</Text>
-						</Space>
-					</Form>
-				</Modal>
 			</Card>
-			<Card title="入住规划表">
-				<Space direction="vertical" size={12} style={{ width: '100%' }}>
+			<Card
+				title="房间入住规划总览"
+				extra={
+					<Button type="link" onClick={refreshOverview} loading={timelineLoading || roomInstancesLoading}>
+						刷新
+					</Button>
+				}
+			>
+				<Space direction="vertical" size={16} style={{ width: '100%' }}>
 					<Space wrap align="center">
 						<Button onClick={() => setTimelineStart(prev => prev.add(-TOTAL_DAYS, 'day'))}>上一周</Button>
 						<Button onClick={() => setTimelineStart(prev => prev.add(TOTAL_DAYS, 'day'))}>下一周</Button>
@@ -693,11 +855,17 @@ export default function AdminDemo() {
 									const roomBookings = bookingsByRoom.get(room.id) || [];
 									return (
 										<div key={room.id} style={{ display: 'flex', alignItems: 'stretch' }}>
-															<div style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
+											<div style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
 												<Space direction="vertical" size={0}>
-													<Text strong>{room.name}</Text>
-																		<Text type="secondary" style={{ fontSize: 12 }}>房型ID #{room.id} · 酒店 #{room.hotelId ?? '—'} · {room.type}</Text>
-																		<Text type="secondary" style={{ fontSize: 12 }}>库存 {room.availableCount}/{room.totalCount}</Text>
+													<Text
+														strong
+														onClick={() => openRoomTypeDetail(room)}
+														style={{ cursor: 'pointer' }}
+													>
+														{room.name}
+													</Text>
+													<Text type="secondary" style={{ fontSize: 12 }}>房型ID #{room.id} · 酒店 #{room.hotelId ?? '—'} · {room.type}</Text>
+													<Text type="secondary" style={{ fontSize: 12 }}>库存 {room.availableCount}/{room.totalCount}</Text>
 												</Space>
 											</div>
 											<div
@@ -719,18 +887,19 @@ export default function AdminDemo() {
 													const duration = effectiveEnd.diff(effectiveStart, 'minute') / 60;
 													const left = startOffset * CELL_WIDTH;
 													const width = Math.max(duration * CELL_WIDTH, 6);
-													const color = STATUS_COLORS[booking.status] || '#597ef7';
-																			const tooltipTitle = (
-																				<div>
-																					<div>订单 #{booking.id}</div>
-																					<div>酒店：{booking.hotelId ?? '—'} · 房型：{booking.roomTypeId ?? booking.roomId}</div>
-																					<div>用户：{booking.userId} · 人数：{booking.guests ?? '—'}</div>
-																					<div>状态：{booking.status}</div>
-																					<div>时间：{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
-																					{booking.contactName && <div>联系人：{booking.contactName}</div>}
-																					{booking.contactPhone && <div>电话：{booking.contactPhone}</div>}
-																				</div>
-																			);
+													const meta = getBookingStatusMeta(booking.status);
+													const color = meta.color || STATUS_COLOR_FALLBACK;
+													const tooltipTitle = (
+														<div>
+															<div>订单 #{booking.id}</div>
+															<div>酒店：{booking.hotelId ?? '—'} · 房型：{booking.roomTypeId ?? booking.roomId}</div>
+															<div>用户：{booking.userId} · 人数：{booking.guests ?? '—'}</div>
+															<div>状态：{meta.label}</div>
+															<div>时间：{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
+															{booking.contactName && <div>联系人：{booking.contactName}</div>}
+															{booking.contactPhone && <div>电话：{booking.contactPhone}</div>}
+														</div>
+													);
 													return (
 														<Tooltip key={booking.id} title={tooltipTitle} overlayInnerStyle={{ minWidth: 220 }}>
 															<div
@@ -755,24 +924,54 @@ export default function AdminDemo() {
 																	whiteSpace: 'nowrap',
 																}}
 															>
-																<div style={{ fontWeight: 600 }}>#{booking.id} · {booking.status}</div>
+																<div style={{ fontWeight: 600 }}>#{booking.id} · {meta.label}</div>
 																<div style={{ fontSize: 12 }}>{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
 															</div>
 														</Tooltip>
 													);
 												})}
-											</div>
 										</div>
-									);
-								})}
+									</div>
+								);
+							})}
 							</div>
 						</div>
 					</Spin>
 					<Space wrap>
-						{Object.entries(STATUS_COLORS).map(([status, color]) => (
-							<Tag key={status} color={color}>{status}</Tag>
+						{Object.entries(BOOKING_STATUS_META).map(([status, value]) => (
+							<Tag key={status} color={value.color}>{value.label}</Tag>
 						))}
 					</Space>
+					<Divider orientation="left">房间状态概览</Divider>
+					{roomInstancesLoading ? (
+						<div style={{ textAlign: 'center', padding: '24px 0' }}><Spin /></div>
+					) : groupedRooms.length === 0 ? (
+						<Text type="secondary">暂无房间数据</Text>
+					) : (
+						<Space direction="vertical" size={24} style={{ width: '100%' }}>
+							{groupedRooms.map(({ roomType, rooms: typeRooms }) => {
+								const total = typeRooms.length;
+								const available = typeRooms.filter((item) => Number(item.status) === 1).length;
+								return (
+									<Card
+										size="small"
+										key={roomType.id}
+										title={
+											<Space size={12} wrap>
+												<Text strong>{roomType.name || `房型 #${roomType.id}`}</Text>
+												<Text type="secondary">房间数：{total}</Text>
+												<Text type={available > 0 ? 'success' : 'danger'}>空房：{available}</Text>
+											</Space>
+										}
+									>
+										<div className="room-instance-grid">
+											{typeRooms.map(renderRoomCell)}
+										</div>
+									</Card>
+								);
+							})}
+						</Space>
+					)}
 				</Space>
 			</Card>
 			<VacancyAnalyticsPanel />
@@ -781,7 +980,7 @@ export default function AdminDemo() {
 					<Col xs={24} sm={12} md={8} lg={6} key={r.id}>
 						<Card loading={loading} title={`${r.name} · ${r.type}`}>
 							<Space direction="vertical" style={{ width: '100%' }}>
-																<Text>库存：{r.availableCount}/{r.totalCount}</Text>
+								<Text>库存：{r.availableCount}/{r.totalCount}</Text>
 								<Space>
 									<Text>调整总数:</Text>
 									<InputNumber min={0} value={totalInput[r.id]} onChange={(v)=>setTotalInput(s=>({...s, [r.id]: v}))} />
@@ -792,6 +991,40 @@ export default function AdminDemo() {
 					</Col>
 				))}
 			</Row>
+			<Modal
+				open={!!selectedRoom}
+				title={selectedRoom ? `房间 ${selectedRoom.roomNumber || selectedRoom.id}` : '房间详情'}
+				onCancel={() => setSelectedRoom(null)}
+				footer={[
+					<Button key="close" onClick={() => setSelectedRoom(null)}>
+						关闭
+					</Button>,
+				]}
+			>
+				{selectedRoom ? (
+					<Descriptions column={1} size="small" bordered>
+						<Descriptions.Item label="房型">
+							{roomTypeMap.get(selectedRoom.roomTypeId)?.name || `房型 #${selectedRoom.roomTypeId}`}
+						</Descriptions.Item>
+						<Descriptions.Item label="房间号">{selectedRoom.roomNumber || selectedRoom.id}</Descriptions.Item>
+						<Descriptions.Item label="状态">
+							{(() => {
+								const meta = getRoomStatusMeta(selectedRoom.status);
+								return (
+									<Space size={8} wrap>
+										<Tag color={meta.color}>{meta.label}</Tag>
+										<Text type="secondary">{meta.description}</Text>
+									</Space>
+								);
+							})()}
+						</Descriptions.Item>
+						<Descriptions.Item label="楼层">{selectedRoom.floor != null ? `${selectedRoom.floor}F` : '未知'}</Descriptions.Item>
+						<Descriptions.Item label="最后退房时间">{selectedRoom.lastCheckoutTime ? dayjs(selectedRoom.lastCheckoutTime).format('YYYY-MM-DD HH:mm') : '暂无记录'}</Descriptions.Item>
+						<Descriptions.Item label="创建时间">{selectedRoom.createdTime ? dayjs(selectedRoom.createdTime).format('YYYY-MM-DD HH:mm') : '未知'}</Descriptions.Item>
+						<Descriptions.Item label="更新时间">{selectedRoom.updatedTime ? dayjs(selectedRoom.updatedTime).format('YYYY-MM-DD HH:mm') : '未知'}</Descriptions.Item>
+					</Descriptions>
+				) : null}
+			</Modal>
 		</Space>
 	);
 }
