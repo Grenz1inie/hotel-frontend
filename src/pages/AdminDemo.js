@@ -26,193 +26,29 @@ import { useNavigate } from 'react-router-dom';
 import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, fetchRoomOccupancyOverview } from '../services/api';
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
-import { DownOutlined } from '@ant-design/icons';
+import { DownOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { BOOKING_STATUS_META, getBookingStatusMeta, getPaymentStatusLabel, getPaymentMethodLabel } from '../constants/booking';
 import { getRoomStatusMeta } from '../constants/room';
 
 const { Title, Text } = Typography;
 
 const EMPTY_ORDERS = { items: [], page: 1, size: 10, total: 0 };
-	<Modal
-		open={roomTypeDetailVisible}
-		title={roomTypeDetailTarget ? `${roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`} · 入住规划` : '房型入住规划'}
-		width="88vw"
-		onCancel={closeRoomTypeDetail}
-		footer={[
-			roomTypeDetailTarget ? (
-				<Button
-					key="refresh"
-					onClick={() => roomTypeDetailTarget && openRoomTypeDetail(roomTypeDetailTarget)}
-					loading={roomTypeDetailLoading}
-				>
-					重新加载
-				</Button>
-			) : null,
-			<Button key="close" onClick={closeRoomTypeDetail}>
-				关闭
-			</Button>,
-		].filter(Boolean)}
-	>
-		<Spin spinning={roomTypeDetailLoading}>
-			{roomTypeDetailTarget ? (
-				<Space direction="vertical" size={16} style={{ width: '100%' }}>
-					<Space wrap>
-						<Text strong>{roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`}</Text>
-						<Text type="secondary">房型ID：{roomTypeDetailTarget.id}</Text>
-						{roomTypeDetailTarget.hotelId != null ? (
-							<Text type="secondary">酒店ID：{roomTypeDetailTarget.hotelId}</Text>
-						) : null}
-						{roomTypeDetailTarget.type ? <Tag color="blue">{roomTypeDetailTarget.type}</Tag> : null}
-						<Text type="secondary">时间范围：{weekRangeText}</Text>
-					</Space>
-					<div style={{ overflowX: 'auto' }}>
-						<div style={{ minWidth: LABEL_WIDTH + timelineWidth }}>
-							<div style={{ display: 'flex' }}>
-								<div style={{ width: LABEL_WIDTH, padding: '8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
-									<Text strong>房间</Text>
-								</div>
-								<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_DAYS}, ${HOURS_PER_DAY * CELL_WIDTH}px)` }}>
-									{timelineDays.map(({ date, label }) => (
-										<div
-											key={date.valueOf()}
-											style={{
-												textAlign: 'center',
-												padding: '8px 0',
-												borderRight: '1px solid #d9d9d9',
-												borderBottom: '1px solid #d9d9d9',
-												background: '#fafafa',
-											}}
-										>
-											<div>{label}</div>
-											<div style={{ fontSize: 12, color: '#999' }}>{date.format('YYYY-MM-DD')}</div>
-										</div>
-									))}
-								</div>
-							</div>
-							<div style={{ display: 'flex' }}>
-								<div style={{ width: LABEL_WIDTH, padding: '4px 8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
-									<Text type="secondary">小时</Text>
-								</div>
-								<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_HOURS}, ${CELL_WIDTH}px)` }}>
-									{timelineHours.map((hour, idx) => (
-										<div
-											key={hour.valueOf()}
-											style={{
-												textAlign: 'center',
-												fontSize: 12,
-												padding: '2px 0',
-												borderRight: '1px solid #f0f0f0',
-												borderBottom: '1px solid #f0f0f0',
-												background: idx % HOURS_PER_DAY === 0 ? '#fafafa' : '#fff',
-											}}
-										>
-											{hour.format('HH')}
-										</div>
-									))}
-								</div>
-							</div>
-							{roomTypeDetailRooms.length === 0 ? (
-								<div style={{ padding: '48px 0', borderBottom: '1px solid #f0f0f0' }}>
-									<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无房间数据" />
-								</div>
-							) : (
-								roomTypeDetailRooms.map((room) => {
-									const roomKey = room.id ?? room.roomId ?? `${room.roomTypeId || roomTypeDetailTarget.id}-${room.roomNumber || 'unknown'}`;
-									const roomBookings = roomTypeDetailBookingsByRoom.get(room.id ?? room.roomId) || [];
-									const meta = getRoomStatusMeta(room?.status);
-									return (
-										<div key={roomKey} style={{ display: 'flex', alignItems: 'stretch' }}>
-											<div style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
-												<Space direction="vertical" size={0}>
-													<Text strong>房间 {room.roomNumber || room.id || '未知'}</Text>
-													<Text type="secondary" style={{ fontSize: 12 }}>ID #{room.id ?? room.roomId ?? '—'} · 状态：{meta.label || '未知'}</Text>
-												</Space>
-											</div>
-											<div
-												style={{
-													width: timelineWidth,
-													position: 'relative',
-													borderBottom: '1px solid #f0f0f0',
-													minHeight: 56,
-													background: `repeating-linear-gradient(to right, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent ${CELL_WIDTH}px)`
-												}}
-											>
-												{roomBookings.length === 0 ? null : roomBookings.map((booking) => {
-													const bookingStart = dayjs(booking.startTime);
-													const bookingEnd = dayjs(booking.endTime);
-													const effectiveStart = bookingStart.isBefore(timelineStart) ? timelineStart : bookingStart;
-													const effectiveEnd = bookingEnd.isAfter(timelineEnd) ? timelineEnd : bookingEnd;
-													if (!effectiveEnd.isAfter(effectiveStart)) return null;
-													const startOffset = effectiveStart.diff(timelineStart, 'minute') / 60;
-													const duration = effectiveEnd.diff(effectiveStart, 'minute') / 60;
-													const left = startOffset * CELL_WIDTH;
-													const width = Math.max(duration * CELL_WIDTH, 6);
-													const metaInfo = getBookingStatusMeta(booking.status);
-													const color = metaInfo.color || STATUS_COLOR_FALLBACK;
-													const tooltipTitle = (
-														<div>
-															<div>订单 #{booking.id}</div>
-															<div>房间：{room.roomNumber || room.id || booking.roomId}</div>
-															<div>状态：{metaInfo.label}</div>
-															<div>时间：{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
-															{booking.contactName && <div>联系人：{booking.contactName}</div>}
-															{booking.contactPhone && <div>电话：{booking.contactPhone}</div>}
-														</div>
-													);
-													return (
-														<Tooltip key={booking.id} title={tooltipTitle} overlayInnerStyle={{ minWidth: 220 }}>
-															<div
-																style={{
-																	position: 'absolute',
-																	left,
-																	top: 6,
-																	height: 'calc(100% - 12px)',
-																	width,
-																	minWidth: 8,
-																	backgroundColor: color,
-																	color: '#fff',
-																	borderRadius: 6,
-																	padding: '4px 8px',
-																	display: 'flex',
-																	flexDirection: 'column',
-																	justifyContent: 'center',
-																	gap: 2,
-																	boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
-																	overflow: 'hidden',
-																	textOverflow: 'ellipsis',
-																	whiteSpace: 'nowrap',
-																}}
-																>
-																	<div style={{ fontWeight: 600 }}>#{booking.id} · {metaInfo.label}</div>
-																	<div style={{ fontSize: 12 }}>{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
-																</div>
-															</Tooltip>
-													);
-												})}
-											</div>
-										</div>
-									);
-								})
-							)}
-						</div>
-					</div>
-					<Space wrap>
-						{Object.entries(BOOKING_STATUS_META).map(([status, value]) => (
-							<Tag key={status} color={value.color}>{value.label}</Tag>
-						))}
-					</Space>
-				</Space>
-			) : (
-				<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择房型" />
-			)}
-		</Spin>
-	</Modal>
 
 const TOTAL_DAYS = 7;
 const HOURS_PER_DAY = 24;
 const TOTAL_HOURS = TOTAL_DAYS * HOURS_PER_DAY;
-const CELL_WIDTH = 36; // px per hour
+const BASE_CELL_WIDTH = 36; // px per hour at zoom 1
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
 const LABEL_WIDTH = 180; // px for room info column
+const SECTION_TITLE_STYLE = {
+	fontSize: 18,
+	fontWeight: 600,
+	lineHeight: '24px',
+	display: 'inline-flex',
+	alignItems: 'center',
+	gap: 8,
+};
 
 const STATUS_COLOR_FALLBACK = '#597ef7';
 
@@ -228,6 +64,8 @@ export default function AdminDemo() {
 	const [timelineBookings, setTimelineBookings] = React.useState([]);
 	const [roomInstances, setRoomInstances] = React.useState([]);
 	const [roomInstancesLoading, setRoomInstancesLoading] = React.useState(false);
+	const roomInstancesRef = React.useRef([]);
+	const [zoom, setZoom] = React.useState(1);
 	const [roomTypeDetailVisible, setRoomTypeDetailVisible] = React.useState(false);
 	const [roomTypeDetailLoading, setRoomTypeDetailLoading] = React.useState(false);
 	const [roomTypeDetailTarget, setRoomTypeDetailTarget] = React.useState(null);
@@ -348,6 +186,44 @@ export default function AdminDemo() {
 		}
 	}, [navigate]);
 
+	React.useEffect(() => {
+		roomInstancesRef.current = roomInstances;
+	}, [roomInstances]);
+
+	const clampZoom = React.useCallback((value) => {
+		if (value < MIN_ZOOM) return MIN_ZOOM;
+		if (value > MAX_ZOOM) return MAX_ZOOM;
+		return Number(value.toFixed(2));
+	}, []);
+
+	const cellWidth = React.useMemo(() => BASE_CELL_WIDTH * zoom, [zoom]);
+	const timelineWidth = React.useMemo(() => TOTAL_HOURS * cellWidth, [cellWidth]);
+
+	const timelineEnd = React.useMemo(() => timelineStart.add(TOTAL_DAYS, 'day'), [timelineStart]);
+	const timelineHours = React.useMemo(() => Array.from({ length: TOTAL_HOURS }, (_, i) => timelineStart.add(i, 'hour')), [timelineStart]);
+	const timelineDays = React.useMemo(() => Array.from({ length: TOTAL_DAYS }, (_, i) => {
+		const date = timelineStart.add(i, 'day');
+		return { date, label: date.format('MM-DD ddd') };
+	}), [timelineStart]);
+	const weekRangeText = React.useMemo(() => `${timelineStart.format('YYYY-MM-DD')} ~ ${timelineStart.add(TOTAL_DAYS - 1, 'day').format('YYYY-MM-DD')}`, [timelineStart]);
+	const zoomPercent = React.useMemo(() => Math.round(zoom * 100), [zoom]);
+	const resetZoom = React.useCallback(() => setZoom(1), []);
+
+	const handleTimelineWheel = React.useCallback((event) => {
+		if (!event) return;
+		const container = event.currentTarget;
+		if (event.shiftKey && container) {
+			event.preventDefault();
+			container.scrollLeft += event.deltaY;
+			return;
+		}
+		event.preventDefault();
+		const delta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+		if (!delta) return;
+		const factor = delta > 0 ? 0.9 : 1.1;
+		setZoom((prev) => clampZoom(prev * factor));
+	}, [clampZoom]);
+
 	const openRoomTypeDetail = React.useCallback(async (roomType) => {
 		if (!roomType) return;
 		setRoomTypeDetailTarget(prev => {
@@ -374,7 +250,7 @@ export default function AdminDemo() {
 			});
 			const fetchedBookings = Array.isArray(res?.bookings) ? res.bookings : [];
 			const fetchedRooms = Array.isArray(res?.roomInstances) ? res.roomInstances : [];
-			const fallbackRooms = roomInstances.filter((ri) => ri.roomTypeId === roomType.id);
+			const fallbackRooms = roomInstancesRef.current.filter((ri) => ri.roomTypeId === roomType.id);
 			const mergedMap = new Map();
 			[...fetchedRooms, ...fallbackRooms].forEach((ri) => {
 				if (!ri) return;
@@ -417,7 +293,15 @@ export default function AdminDemo() {
 		} finally {
 			setRoomTypeDetailLoading(false);
 		}
-	}, [timelineStart, timelineEnd, roomInstances]);
+	}, [timelineStart, timelineEnd]);
+
+	const handleRoomTypeKeyDown = React.useCallback((event, roomType) => {
+		if (!roomType) return;
+		if (event.key === 'Enter' || event.key === ' ') {
+			event.preventDefault();
+			openRoomTypeDetail(roomType);
+		}
+	}, [openRoomTypeDetail]);
 
 	const refreshOverview = React.useCallback(async () => {
 		await loadOccupancy(timelineStart);
@@ -440,12 +324,6 @@ export default function AdminDemo() {
 		refreshOverview();
 	}, [refreshOverview]);
 
-	const timelineEnd = React.useMemo(() => timelineStart.add(TOTAL_DAYS, 'day'), [timelineStart]);
-	const timelineHours = React.useMemo(() => Array.from({ length: TOTAL_HOURS }, (_, i) => timelineStart.add(i, 'hour')), [timelineStart]);
-	const timelineDays = React.useMemo(() => Array.from({ length: TOTAL_DAYS }, (_, i) => {
-		const date = timelineStart.add(i, 'day');
-		return { date, label: date.format('MM-DD ddd') };
-	}), [timelineStart]);
 	const bookingsByRoom = React.useMemo(() => {
 		const map = new Map();
 		timelineBookings.forEach((b) => {
@@ -477,8 +355,6 @@ export default function AdminDemo() {
 		});
 		return map;
 	}, [roomTypeDetailBookings]);
-	const timelineWidth = TOTAL_HOURS * CELL_WIDTH;
-	const weekRangeText = React.useMemo(() => `${timelineStart.format('YYYY-MM-DD')} ~ ${timelineStart.add(TOTAL_DAYS - 1, 'day').format('YYYY-MM-DD')}`, [timelineStart]);
 	const roomTypeMap = React.useMemo(() => {
 		const map = new Map();
 		rooms.forEach((room) => {
@@ -789,7 +665,17 @@ export default function AdminDemo() {
 				/>
 			</Card>
 			<Card
-				title="房间入住规划总览"
+				title={
+					<Space size={8} align="center" wrap>
+						<span style={SECTION_TITLE_STYLE}>房间入住规划总览</span>
+						<Tooltip title="提示：滚轮可缩放时间轴，按住 Shift 并滚动可水平移动，点击左侧房型名称可以查看具体房间规划">
+							<Text type="secondary" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'help' }}>
+								<InfoCircleOutlined />
+								滚轮缩放 · Shift+滚轮横移 · 点击房型查看详情
+							</Text>
+						</Tooltip>
+					</Space>
+				}
 				extra={
 					<Button type="link" onClick={refreshOverview} loading={timelineLoading || roomInstancesLoading}>
 						刷新
@@ -803,15 +689,20 @@ export default function AdminDemo() {
 						<Button onClick={() => setTimelineStart(dayjs().startOf('day'))}>回到今天</Button>
 						<DatePicker value={timelineStart} onChange={(value) => value && setTimelineStart(value.startOf('day'))} />
 						<Text type="secondary">范围：{weekRangeText}</Text>
+						<Text type="secondary">缩放：{zoomPercent}%</Text>
+						<Button size="small" type="text" onClick={resetZoom}>重置缩放</Button>
 					</Space>
 					<Spin spinning={timelineLoading}>
-						<div style={{ overflowX: 'auto' }}>
+						<div style={{ overflowX: 'auto', overscrollBehavior: 'contain' }} onWheel={handleTimelineWheel}>
 							<div style={{ minWidth: LABEL_WIDTH + timelineWidth }}>
 								<div style={{ display: 'flex' }}>
-									<div style={{ width: LABEL_WIDTH, padding: '8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
+									<div
+										className="timeline-label timeline-label-header"
+										style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}
+									>
 										<Text strong>房型</Text>
 									</div>
-									<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_DAYS}, ${HOURS_PER_DAY * CELL_WIDTH}px)` }}>
+									<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_DAYS}, ${HOURS_PER_DAY * cellWidth}px)` }}>
 										{timelineDays.map(({ date, label }) => (
 											<div
 												key={date.valueOf()}
@@ -830,10 +721,13 @@ export default function AdminDemo() {
 									</div>
 								</div>
 								<div style={{ display: 'flex' }}>
-									<div style={{ width: LABEL_WIDTH, padding: '4px 8px', background: '#fafafa', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}>
+									<div
+										className="timeline-label timeline-label-header"
+										style={{ width: LABEL_WIDTH, padding: '4px 8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}
+									>
 										<Text type="secondary">小时</Text>
 									</div>
-									<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_HOURS}, ${CELL_WIDTH}px)` }}>
+									<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_HOURS}, ${cellWidth}px)` }}>
 										{timelineHours.map((hour, idx) => (
 											<div
 												key={hour.valueOf()}
@@ -853,17 +747,20 @@ export default function AdminDemo() {
 								</div>
 								{rooms.map((room) => {
 									const roomBookings = bookingsByRoom.get(room.id) || [];
+									const displayName = room.name || `房型 #${room.id}`;
 									return (
 										<div key={room.id} style={{ display: 'flex', alignItems: 'stretch' }}>
-											<div style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0', background: '#fff' }}>
+											<div
+												className="timeline-label timeline-label--clickable"
+												style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}
+												onClick={() => openRoomTypeDetail(room)}
+												onKeyDown={(event) => handleRoomTypeKeyDown(event, room)}
+												role="button"
+												tabIndex={0}
+												aria-label={`查看房型 ${displayName} 的详细规划`}
+											>
 												<Space direction="vertical" size={0}>
-													<Text
-														strong
-														onClick={() => openRoomTypeDetail(room)}
-														style={{ cursor: 'pointer' }}
-													>
-														{room.name}
-													</Text>
+													<Text strong>{displayName}</Text>
 													<Text type="secondary" style={{ fontSize: 12 }}>房型ID #{room.id} · 酒店 #{room.hotelId ?? '—'} · {room.type}</Text>
 													<Text type="secondary" style={{ fontSize: 12 }}>库存 {room.availableCount}/{room.totalCount}</Text>
 												</Space>
@@ -874,7 +771,7 @@ export default function AdminDemo() {
 													position: 'relative',
 													borderBottom: '1px solid #f0f0f0',
 													minHeight: 56,
-													background: `repeating-linear-gradient(to right, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent ${CELL_WIDTH}px)`
+													background: `repeating-linear-gradient(to right, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent ${cellWidth}px)`
 												}}
 											>
 												{roomBookings.map((booking) => {
@@ -885,8 +782,8 @@ export default function AdminDemo() {
 													if (!effectiveEnd.isAfter(effectiveStart)) return null;
 													const startOffset = effectiveStart.diff(timelineStart, 'minute') / 60;
 													const duration = effectiveEnd.diff(effectiveStart, 'minute') / 60;
-													const left = startOffset * CELL_WIDTH;
-													const width = Math.max(duration * CELL_WIDTH, 6);
+													const left = startOffset * cellWidth;
+													const width = Math.max(duration * cellWidth, Math.max(6, cellWidth * 0.5));
 													const meta = getBookingStatusMeta(booking.status);
 													const color = meta.color || STATUS_COLOR_FALLBACK;
 													const tooltipTitle = (
@@ -903,6 +800,7 @@ export default function AdminDemo() {
 													return (
 														<Tooltip key={booking.id} title={tooltipTitle} overlayInnerStyle={{ minWidth: 220 }}>
 															<div
+																className="timeline-booking-block"
 																style={{
 																	position: 'absolute',
 																	left,
@@ -942,7 +840,9 @@ export default function AdminDemo() {
 							<Tag key={status} color={value.color}>{value.label}</Tag>
 						))}
 					</Space>
-					<Divider orientation="left">房间状态概览</Divider>
+					<Divider orientation="left" orientationMargin={0} style={{ margin: '24px 0 16px' }}>
+						<span style={SECTION_TITLE_STYLE}>房间状态概览</span>
+					</Divider>
 					{roomInstancesLoading ? (
 						<div style={{ textAlign: 'center', padding: '24px 0' }}><Spin /></div>
 					) : groupedRooms.length === 0 ? (
@@ -952,6 +852,14 @@ export default function AdminDemo() {
 							{groupedRooms.map(({ roomType, rooms: typeRooms }) => {
 								const total = typeRooms.length;
 								const available = typeRooms.filter((item) => Number(item.status) === 1).length;
+								const fallbackRoomType = roomTypeMap.get(roomType.id) ?? roomType;
+								const openTarget = {
+									id: fallbackRoomType.id ?? roomType.id,
+									hotelId: fallbackRoomType.hotelId ?? typeRooms[0]?.hotelId,
+									name: fallbackRoomType.name ?? roomType.name,
+									type: fallbackRoomType.type ?? roomType.type,
+								};
+								const isOpeningCurrent = roomTypeDetailLoading && roomTypeDetailTarget?.id === openTarget.id;
 								return (
 									<Card
 										size="small"
@@ -962,6 +870,16 @@ export default function AdminDemo() {
 												<Text type="secondary">房间数：{total}</Text>
 												<Text type={available > 0 ? 'success' : 'danger'}>空房：{available}</Text>
 											</Space>
+										}
+										extra={
+											<Button
+												type="link"
+												size="small"
+												onClick={() => openRoomTypeDetail(openTarget)}
+												loading={isOpeningCurrent}
+											>
+												查看入住规划
+											</Button>
 										}
 									>
 										<div className="room-instance-grid">
@@ -974,6 +892,187 @@ export default function AdminDemo() {
 					)}
 				</Space>
 			</Card>
+			<Modal
+				open={roomTypeDetailVisible}
+				title={roomTypeDetailTarget ? `${roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`} · 入住规划` : '房型入住规划'}
+				width="88vw"
+				onCancel={closeRoomTypeDetail}
+				footer={[
+					roomTypeDetailTarget ? (
+						<Button
+							key="refresh"
+							onClick={() => roomTypeDetailTarget && openRoomTypeDetail(roomTypeDetailTarget)}
+							loading={roomTypeDetailLoading}
+						>
+							重新加载
+						</Button>
+					) : null,
+					<Button key="close" onClick={closeRoomTypeDetail}>
+						关闭
+					</Button>,
+				].filter(Boolean)}
+			>
+				<Spin spinning={roomTypeDetailLoading}>
+					{roomTypeDetailTarget ? (
+						<Space direction="vertical" size={16} style={{ width: '100%' }}>
+							<Space wrap>
+								<Text strong>{roomTypeDetailTarget.name || `房型 #${roomTypeDetailTarget.id}`}</Text>
+								<Text type="secondary">房型ID：{roomTypeDetailTarget.id}</Text>
+								{roomTypeDetailTarget.hotelId != null ? (
+									<Text type="secondary">酒店ID：{roomTypeDetailTarget.hotelId}</Text>
+								) : null}
+								{roomTypeDetailTarget.type ? <Tag color="blue">{roomTypeDetailTarget.type}</Tag> : null}
+								<Text type="secondary">时间范围：{weekRangeText}</Text>
+							</Space>
+							<div style={{ overflowX: 'auto', overscrollBehavior: 'contain' }} onWheel={handleTimelineWheel}>
+								<div style={{ minWidth: LABEL_WIDTH + timelineWidth }}>
+									<div style={{ display: 'flex' }}>
+										<div
+											className="timeline-label timeline-label-header"
+											style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}
+										>
+											<Text strong>房间</Text>
+										</div>
+										<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_DAYS}, ${HOURS_PER_DAY * cellWidth}px)` }}>
+											{timelineDays.map(({ date, label }) => (
+												<div
+													key={date.valueOf()}
+													style={{
+														textAlign: 'center',
+														padding: '8px 0',
+														borderRight: '1px solid #d9d9d9',
+														borderBottom: '1px solid #d9d9d9',
+														background: '#fafafa',
+													}}
+												>
+													<div>{label}</div>
+													<div style={{ fontSize: 12, color: '#999' }}>{date.format('YYYY-MM-DD')}</div>
+												</div>
+											))}
+										</div>
+									</div>
+									<div style={{ display: 'flex' }}>
+										<div
+											className="timeline-label timeline-label-header"
+											style={{ width: LABEL_WIDTH, padding: '4px 8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #d9d9d9' }}
+										>
+											<Text type="secondary">小时</Text>
+										</div>
+										<div style={{ width: timelineWidth, display: 'grid', gridTemplateColumns: `repeat(${TOTAL_HOURS}, ${cellWidth}px)` }}>
+											{timelineHours.map((hour, idx) => (
+												<div
+													key={hour.valueOf()}
+													style={{
+														textAlign: 'center',
+														fontSize: 12,
+														padding: '2px 0',
+														borderRight: '1px solid #f0f0f0',
+														borderBottom: '1px solid #f0f0f0',
+														background: idx % HOURS_PER_DAY === 0 ? '#fafafa' : '#fff',
+													}}
+												>
+													{hour.format('HH')}
+												</div>
+											))}
+										</div>
+									</div>
+									{roomTypeDetailRooms.length === 0 ? (
+										<div style={{ padding: '48px 0', borderBottom: '1px solid #f0f0f0' }}>
+											<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无房间数据" />
+										</div>
+									) : (
+										roomTypeDetailRooms.map((room) => {
+											const roomKey = room.id ?? room.roomId ?? `${room.roomTypeId || roomTypeDetailTarget.id}-${room.roomNumber || 'unknown'}`;
+											const roomBookings = roomTypeDetailBookingsByRoom.get(room.id ?? room.roomId) || [];
+											const meta = getRoomStatusMeta(room?.status);
+											return (
+												<div key={roomKey} style={{ display: 'flex', alignItems: 'stretch' }}>
+													<div className="timeline-label" style={{ width: LABEL_WIDTH, padding: '8px', borderRight: '1px solid #f0f0f0', borderBottom: '1px solid #f0f0f0' }}>
+														<Space direction="vertical" size={0}>
+															<Text strong>房间 {room.roomNumber || room.id || '未知'}</Text>
+															<Text type="secondary" style={{ fontSize: 12 }}>ID #{room.id ?? room.roomId ?? '—'} · 状态：{meta.label || '未知'}</Text>
+														</Space>
+													</div>
+													<div
+														style={{
+															width: timelineWidth,
+															position: 'relative',
+															borderBottom: '1px solid #f0f0f0',
+															minHeight: 56,
+															background: `repeating-linear-gradient(to right, rgba(0,0,0,0.04) 0, rgba(0,0,0,0.04) 1px, transparent 1px, transparent ${cellWidth}px)`
+														}}
+													>
+														{roomBookings.length === 0 ? null : roomBookings.map((booking) => {
+															const bookingStart = dayjs(booking.startTime);
+															const bookingEnd = dayjs(booking.endTime);
+															const effectiveStart = bookingStart.isBefore(timelineStart) ? timelineStart : bookingStart;
+															const effectiveEnd = bookingEnd.isAfter(timelineEnd) ? timelineEnd : bookingEnd;
+															if (!effectiveEnd.isAfter(effectiveStart)) return null;
+															const startOffset = effectiveStart.diff(timelineStart, 'minute') / 60;
+															const duration = effectiveEnd.diff(effectiveStart, 'minute') / 60;
+															const left = startOffset * cellWidth;
+															const width = Math.max(duration * cellWidth, Math.max(6, cellWidth * 0.5));
+															const metaInfo = getBookingStatusMeta(booking.status);
+															const color = metaInfo.color || STATUS_COLOR_FALLBACK;
+															const tooltipTitle = (
+																<div>
+																	<div>订单 #{booking.id}</div>
+																	<div>房间：{room.roomNumber || room.id || booking.roomId}</div>
+																	<div>状态：{metaInfo.label}</div>
+																	<div>时间：{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
+																	{booking.contactName && <div>联系人：{booking.contactName}</div>}
+																	{booking.contactPhone && <div>电话：{booking.contactPhone}</div>}
+																</div>
+															);
+															return (
+																<Tooltip key={booking.id} title={tooltipTitle} overlayInnerStyle={{ minWidth: 220 }}>
+																	<div
+																		className="timeline-booking-block"
+																		style={{
+																			position: 'absolute',
+																			left,
+																			top: 6,
+																			height: 'calc(100% - 12px)',
+																			width,
+																			minWidth: 8,
+																			backgroundColor: color,
+																			color: '#fff',
+																			borderRadius: 6,
+																			padding: '4px 8px',
+																			display: 'flex',
+																			flexDirection: 'column',
+																			justifyContent: 'center',
+																			gap: 2,
+																			boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+																			overflow: 'hidden',
+																			textOverflow: 'ellipsis',
+																			whiteSpace: 'nowrap',
+																		}}
+																		>
+																			<div style={{ fontWeight: 600 }}>#{booking.id} · {metaInfo.label}</div>
+																			<div style={{ fontSize: 12 }}>{bookingStart.format('MM-DD HH:mm')} ~ {bookingEnd.format('MM-DD HH:mm')}</div>
+																		</div>
+																	</Tooltip>
+															);
+													})}
+												</div>
+											</div>
+										);
+									})
+								)}
+							</div>
+							</div>
+							<Space wrap>
+								{Object.entries(BOOKING_STATUS_META).map(([status, value]) => (
+									<Tag key={status} color={value.color}>{value.label}</Tag>
+								))}
+							</Space>
+						</Space>
+					) : (
+						<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择房型" />
+					)}
+				</Spin>
+			</Modal>
 			<VacancyAnalyticsPanel />
 			<Row gutter={[16, 16]}>
 				{rooms.map(r => (
