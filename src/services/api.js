@@ -1,5 +1,29 @@
 const BASE = '/api';
 
+// Build full image URL from relative path - 直接使用前端public目录的图片
+export function buildImageUrl(url) {
+	if (!url) return '';
+	// If already a full URL (http:// or https://), return as is
+	if (url.startsWith('http://') || url.startsWith('https://')) {
+		return url;
+	}
+	// 直接返回相对于public目录的路径，不经过后端
+	// 例如：/images/hotels/xinghe-hero.jpg -> /images/hotels/xinghe-hero.jpg
+	if (url.startsWith('/images/')) {
+		return url;
+	}
+	// 如果路径以 /images 开头但没有 /，补上
+	if (url.startsWith('images/')) {
+		return `/${url}`;
+	}
+	// 其他以 / 开头的路径，假定是图片路径
+	if (url.startsWith('/')) {
+		return url;
+	}
+	// 否则，假设是相对路径，添加 / 前缀
+	return `/${url}`;
+}
+
 function getToken() {
 	try {
 		return localStorage.getItem('auth:token') || '';
@@ -73,6 +97,9 @@ function normalizeRoom(room) {
 	if (normalized.price_per_night != null && normalized.pricePerNight == null) {
 		normalized.pricePerNight = normalized.price_per_night;
 	}
+	if (normalized.theme_color != null && normalized.themeColor == null) {
+		normalized.themeColor = normalized.theme_color;
+	}
 	if (normalized.area_sqm != null && normalized.areaSqm == null) {
 		normalized.areaSqm = normalized.area_sqm;
 	}
@@ -107,6 +134,16 @@ function normalizeRoom(room) {
 		const price = Number(normalized.pricePerNight);
 		normalized.pricePerNight = Number.isNaN(price) ? normalized.pricePerNight : price;
 	}
+	if (normalized.themeColor != null) {
+		normalized.themeColor = String(normalized.themeColor);
+	}
+	// Handle images field
+	if (normalized.images != null && !Array.isArray(normalized.images)) {
+		normalized.images = getImageList(normalized.images);
+	}
+	if (normalized.images == null) {
+		normalized.images = [];
+	}
 	return normalized;
 }
 
@@ -131,6 +168,36 @@ function normalizeRoomInstance(room) {
 	if (normalized.updated_time != null && normalized.updatedTime == null) {
 		normalized.updatedTime = normalized.updated_time;
 	}
+	if (normalized.booking_id != null && normalized.bookingId == null) {
+		normalized.bookingId = normalized.booking_id;
+	}
+	if (normalized.booking_status != null && normalized.bookingStatus == null) {
+		normalized.bookingStatus = normalized.booking_status;
+	}
+	if (normalized.booking_user_id != null && normalized.bookingUserId == null) {
+		normalized.bookingUserId = normalized.booking_user_id;
+	}
+	if (normalized.booking_guests != null && normalized.bookingGuests == null) {
+		normalized.bookingGuests = normalized.booking_guests;
+	}
+	if (normalized.booking_contact_name != null && normalized.bookingContactName == null) {
+		normalized.bookingContactName = normalized.booking_contact_name;
+	}
+	if (normalized.booking_contact_phone != null && normalized.bookingContactPhone == null) {
+		normalized.bookingContactPhone = normalized.booking_contact_phone;
+	}
+	if (normalized.booking_remark != null && normalized.bookingRemark == null) {
+		normalized.bookingRemark = normalized.booking_remark;
+	}
+	if (normalized.booking_amount != null && normalized.bookingAmount == null) {
+		normalized.bookingAmount = normalized.booking_amount;
+	}
+	if (normalized.checkin_time != null && normalized.checkinTime == null) {
+		normalized.checkinTime = normalized.checkin_time;
+	}
+	if (normalized.checkout_time != null && normalized.checkoutTime == null) {
+		normalized.checkoutTime = normalized.checkout_time;
+	}
 	if (normalized.status != null) {
 		const val = Number(normalized.status);
 		normalized.status = Number.isNaN(val) ? normalized.status : val;
@@ -138,6 +205,25 @@ function normalizeRoomInstance(room) {
 	if (normalized.floor != null) {
 		const val = Number(normalized.floor);
 		normalized.floor = Number.isNaN(val) ? normalized.floor : val;
+	}
+	if (normalized.bookingId != null) {
+		const val = Number(normalized.bookingId);
+		normalized.bookingId = Number.isNaN(val) ? normalized.bookingId : val;
+	}
+	if (normalized.bookingUserId != null) {
+		const val = Number(normalized.bookingUserId);
+		normalized.bookingUserId = Number.isNaN(val) ? normalized.bookingUserId : val;
+	}
+	if (normalized.bookingGuests != null) {
+		const val = Number(normalized.bookingGuests);
+		normalized.bookingGuests = Number.isNaN(val) ? normalized.bookingGuests : val;
+	}
+	if (normalized.bookingAmount != null) {
+		const val = Number(normalized.bookingAmount);
+		normalized.bookingAmount = Number.isNaN(val) ? normalized.bookingAmount : val;
+	}
+	if (normalized.bookingStatus != null) {
+		normalized.bookingStatus = String(normalized.bookingStatus).toUpperCase();
 	}
 	return normalized;
 }
@@ -209,6 +295,10 @@ function normalizeHotel(hotel) {
 	}
 	if (normalized.updated_time != null && normalized.updatedTime == null) {
 		normalized.updatedTime = normalized.updated_time;
+	}
+	// Build full URL for hero image
+	if (normalized.heroImageUrl) {
+		normalized.heroImageUrl = buildImageUrl(normalized.heroImageUrl);
 	}
 	if (normalized.galleryImages != null && !Array.isArray(normalized.galleryImages)) {
 		normalized.galleryImages = getImageList(normalized.galleryImages);
@@ -301,6 +391,31 @@ export async function adjustRoomTotalCount(id, totalCount) {
 	return request(`/rooms/${id}/adjust`, { method: 'PUT', query: { totalCount } });
 }
 
+// 房间实例管理
+export async function getRoomInstancesByType(roomTypeId) {
+	return request(`/rooms/room-types/${roomTypeId}/rooms`, { method: 'GET' });
+}
+
+export async function createRoomInstance(roomTypeId, data) {
+	return request(`/rooms/room-types/${roomTypeId}/rooms`, { 
+		method: 'POST', 
+		json: true, 
+		body: data 
+	});
+}
+
+export async function updateRoomInstance(roomId, data) {
+	return request(`/rooms/rooms/${roomId}`, { 
+		method: 'PUT', 
+		json: true, 
+		body: data 
+	});
+}
+
+export async function deleteRoomInstance(roomId) {
+	return request(`/rooms/rooms/${roomId}`, { method: 'DELETE' });
+}
+
 export async function getRoomAvailability(id, { start, end }) {
 	// 公共浏览
 	const data = await request(`/rooms/${id}/availability`, {
@@ -388,16 +503,40 @@ export async function cancelBooking(bookingId) {
 	return normalizeBooking(data);
 }
 
+// 用户申请退款
+export async function requestRefund(bookingId, reason) {
+	const data = await request(`/bookings/${bookingId}/request-refund`, { 
+		method: 'PUT',
+		query: reason ? { reason } : {}
+	});
+	return normalizeBooking(data);
+}
+
+// 管理员批准退款
+export async function approveRefund(bookingId) {
+	const data = await request(`/bookings/${bookingId}/approve-refund`, { method: 'PUT' });
+	return normalizeBooking(data);
+}
+
+// 管理员拒绝退款
+export async function rejectRefund(bookingId, reason) {
+	const data = await request(`/bookings/${bookingId}/reject-refund`, { 
+		method: 'PUT',
+		query: reason ? { reason } : {}
+	});
+	return normalizeBooking(data);
+}
+
 export function getImageList(images) {
 	if (!images) return [];
-	if (Array.isArray(images)) return images.filter(Boolean);
+	if (Array.isArray(images)) return images.filter(Boolean).map(buildImageUrl);
 	if (typeof images !== 'string') return [];
-	return images.split(',').map(s => s.trim()).filter(Boolean);
+	return images.split(',').map(s => s.trim()).filter(Boolean).map(buildImageUrl);
 }
 
 // Admin: list bookings with filters
-export async function adminListBookings({ page = 1, size = 10, status, userId, roomTypeId, roomId, hotelId, contactPhone, start, end } = {}) {
-	const query = { page, size, status, userId, roomTypeId, roomId, hotelId, contactPhone, start, end };
+export async function adminListBookings({ page = 1, size = 10, status, userId, roomTypeId, roomId, hotelId, bookingId, contactPhone, start, end, sortBy } = {}) {
+	const query = { page, size, status, userId, roomTypeId, roomId, hotelId, bookingId, contactPhone, start, end, sortBy };
 	const data = await request('/bookings', { query });
 	const normalized = normalizePageResponse(data, normalizeBooking);
 	if (Array.isArray(normalized)) {
@@ -433,6 +572,36 @@ export async function fetchRoomOccupancyOverview({ start, end, hotelId, roomType
 		return normalized;
 	}
 	return { bookings: [], roomInstances: [] };
+}
+
+export const ROOM_TIMELINE_PAGE_LIMIT = 7;
+
+export async function getRoomOccupancyTimeline(roomTypeId, { start, end, page = 1, size = ROOM_TIMELINE_PAGE_LIMIT, hotelId } = {}) {
+	if (!roomTypeId) return null;
+	const normalizedPage = Math.max(1, Number.isFinite(Number(page)) ? Number(page) : 1);
+	const normalizedSize = Math.min(ROOM_TIMELINE_PAGE_LIMIT, Math.max(1, Number.isFinite(Number(size)) ? Number(size) : ROOM_TIMELINE_PAGE_LIMIT));
+	const query = {
+		page: normalizedPage,
+		size: normalizedSize,
+	};
+	if (!start) {
+		throw new Error('必须提供开始时间');
+	}
+	query.start = formatDateTimeInput(start);
+	if (end) query.end = formatDateTimeInput(end);
+	if (hotelId != null) query.hotelId = hotelId;
+	const data = await request(`/rooms/${roomTypeId}/timeline`, { query });
+	if (!data || typeof data !== 'object') {
+		return data;
+	}
+	const normalized = { ...data };
+	if (Array.isArray(normalized.items)) {
+		normalized.items = normalized.items.map((item) => ({
+			...item,
+			bookings: Array.isArray(item.bookings) ? item.bookings.map(normalizeBooking) : [],
+		}));
+	}
+	return normalized;
 }
 
 export async function getBookingDetail(id) {
@@ -485,6 +654,10 @@ export async function getMyProfile() {
 
 export async function updateMyProfile(payload) {
 	return request('/users/me/profile', { method: 'PUT', json: true, body: payload });
+}
+
+export async function checkVipUpgrade() {
+	return request('/users/me/check-vip-upgrade', { method: 'POST' });
 }
 
 export async function getVipPricingSnapshot() {

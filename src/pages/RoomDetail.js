@@ -1,6 +1,6 @@
 import React from 'react';
-import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, message, Tag, Input, Alert, Radio, Card, Statistic, Divider, Popover, TimePicker } from 'antd';
-import { PlayCircleOutlined, WechatOutlined, CreditCardOutlined, DollarCircleOutlined, WalletOutlined, CalendarOutlined } from '@ant-design/icons';
+import { Button, Descriptions, Image, Space, Typography, Form, InputNumber, message, Tag, Input, Alert, Radio, Card, Statistic, Divider, Popover, TimePicker, Row, Col, Avatar, Badge, theme } from 'antd';
+import { PlayCircleOutlined, WechatOutlined, CreditCardOutlined, DollarCircleOutlined, WalletOutlined, CalendarOutlined, HomeOutlined, UserOutlined, PhoneOutlined, EnvironmentOutlined, StarFilled, ThunderboltOutlined, ClockCircleOutlined, CheckCircleOutlined, SafetyCertificateOutlined, GiftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getRoomById, getImageList, createBooking, getRoomAvailability, getVipPricingSnapshot, getWalletSummary, getMyProfile } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -38,6 +38,8 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
   });
   const { user, updateUser } = useAuth();
   const navigate = useNavigate();
+  const { token } = theme.useToken();
+  const isDarkMode = token.colorBgBase === '#000000' || token.colorBgBase === '#141414';
   const isAdmin = user?.role === 'ADMIN';
   const defaultContactPhone = React.useMemo(() => (isAdmin ? '' : (user?.phone || '')), [isAdmin, user?.phone]);
   const defaultPaymentMethod = isAdmin ? 'ADMIN' : 'WALLET';
@@ -105,9 +107,8 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
   const defaultRangeValue = React.useMemo(() => buildDefaultRange(), [buildDefaultRange]);
 
   const draftSelection = React.useMemo(() => {
-    const [defaultStartRaw, defaultEndRaw] = buildDefaultRange();
+    const [defaultStartRaw] = buildDefaultRange();
     const defaultStart = dayjs(defaultStartRaw);
-    const defaultEnd = dayjs(defaultEndRaw);
     const currentStartCandidate = draftRange?.startDate ?? (Array.isArray(rangeValue) ? rangeValue[0] : null);
     const currentEndCandidate = draftRange?.endDate ?? (Array.isArray(rangeValue) ? rangeValue[1] : null);
     let startMoment = dayjs(currentStartCandidate);
@@ -219,7 +220,7 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
           arrivalTime: dayjs(defaultStart),
           guests: defaultGuests,
           contactName: isAdmin ? '' : (user?.username || ''),
-          contactPhone: defaultContactPhone,
+          contactPhone: isAdmin ? '' : (user?.phone || ''),
           remark: '',
           hotelId: data.hotelId,
           paymentMethod: defaultPaymentMethod,
@@ -232,7 +233,7 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, form, isAdmin, buildDefaultRange, defaultContactPhone, user?.username, defaultPaymentChannel, defaultPaymentMethod]);
+  }, [id, navigate, form, isAdmin, buildDefaultRange, user?.phone, user?.username, defaultPaymentChannel, defaultPaymentMethod]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -503,7 +504,8 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
           parts.push(`支付方式：${getPaymentMethodLabel(paymentMethod)}`);
         }
         if (isAdmin && data.userId && data.userId !== user?.id) {
-          parts.push(`已为客户创建账号 (ID: ${data.userId}，初始密码：123456)`);
+          const phone = vals.contactPhone || data.contactPhone || '未知';
+          parts.push(`已为客户创建/查找账号 (用户ID: ${data.userId}，用户名和初始密码均为：${phone})`);
         }
         message.success(parts.join('，'));
         form.resetFields();
@@ -560,18 +562,69 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
     : walletBalance >= pricingSummary.payableAmount;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space>
-        <Button onClick={onBack}>返回</Button>
-        <Title level={3} style={{ margin: 0 }}>{room.name} · {room.type}</Title>
-        {!isActive && <Tag color="magenta">当前不可售</Tag>}
-      </Space>
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* 页面标题区域 */}
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        borderRadius: 16,
+        padding: '32px 40px',
+        boxShadow: '0 8px 24px rgba(102, 126, 234, 0.25)',
+      }}>
         <Space align="center" style={{ width: '100%', justifyContent: 'space-between', flexWrap: 'wrap' }}>
-          <Text strong>图集预览</Text>
+          <Space size={20} align="center">
+            <Button 
+              onClick={onBack}
+              size="large"
+              style={{
+                background: 'rgba(255, 255, 255, 0.2)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                color: '#fff',
+                fontWeight: 600,
+              }}
+            >
+              返回列表
+            </Button>
+            <div>
+              <Title level={2} style={{ margin: '0 0 8px 0', color: '#fff', fontWeight: 700 }}>
+                <Space>
+                  <HomeOutlined />
+                  {room.name}
+                </Space>
+              </Title>
+              <Space size={12}>
+                <Tag 
+                  color={isActive ? 'success' : 'error'}
+                  icon={isActive ? <CheckCircleOutlined /> : null}
+                  style={{ 
+                    fontSize: 14, 
+                    padding: '4px 12px', 
+                    borderRadius: 8,
+                    border: 'none',
+                  }}
+                >
+                  {isActive ? '可预订' : '暂不可售'}
+                </Tag>
+                <Tag 
+                  style={{ 
+                    background: 'rgba(255, 255, 255, 0.25)',
+                    backdropFilter: 'blur(10px)',
+                    border: '1px solid rgba(255, 255, 255, 0.3)',
+                    color: '#fff',
+                    fontSize: 14,
+                    padding: '4px 12px',
+                    borderRadius: 8,
+                  }}
+                >
+                  {room.type}
+                </Tag>
+              </Space>
+            </div>
+          </Space>
           <Button
             icon={<PlayCircleOutlined />}
             type="primary"
+            size="large"
             onClick={() => {
               if (vrEntry?.src) {
                 setVrVisible(true);
@@ -579,46 +632,239 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
                 message.info('该房型暂未关联 VR 影像，敬请期待。');
               }
             }}
+            style={{
+              height: 48,
+              borderRadius: 10,
+              fontWeight: 600,
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+            }}
           >
-            开启 VR 看房
+            VR 看房
           </Button>
         </Space>
-        <Image.PreviewGroup>
-          <Space wrap>
-            {images.length ? images.map((u, i) => (
-              <Image key={i} src={u} width={260} height={160} style={{ objectFit: 'cover' }} />
-            )) : <Text type="secondary">暂无图片</Text>}
-          </Space>
-        </Image.PreviewGroup>
-      </Space>
-      <Descriptions bordered column={2} size="small">
-        <Descriptions.Item label="描述" span={2}>
-          <Paragraph style={{ margin: 0 }}>{room.description || '—'}</Paragraph>
-        </Descriptions.Item>
-        <Descriptions.Item label="价格">¥{priceDisplay} / 晚</Descriptions.Item>
-        {pricingSummary && (
-          <Descriptions.Item label="会员价" span={2}>
-            {pricingSummary.rate < 1
-              ? `¥${pricingSummary.nightlyDiscountedPrice.toFixed(2)} / 晚（折扣 ${Math.round(pricingSummary.rate * 100)}%）`
-              : '当前会员等级暂无额外折扣'}
-          </Descriptions.Item>
-        )}
-        <Descriptions.Item label="库存">{Number.isNaN(availableCountValue) ? room.availableCount : availableCountValue}/{Number.isNaN(totalCountValue) ? room.totalCount : totalCountValue}</Descriptions.Item>
-        <Descriptions.Item label="最大入住">{maxGuestsDisplay} 人</Descriptions.Item>
-        <Descriptions.Item label="面积">{room.areaSqm ? `${room.areaSqm} ㎡` : '—'}</Descriptions.Item>
-        <Descriptions.Item label="床型">{room.bedType || '—'}</Descriptions.Item>
-        <Descriptions.Item label="酒店ID">{room.hotelId ?? '—'}</Descriptions.Item>
-        <Descriptions.Item label="状态">{isActive ? '可售' : '下架'}</Descriptions.Item>
-        <Descriptions.Item label="设施" span={2}>
-          {amenities.length ? (
-            <Space wrap>
-              {amenities.map((am, idx) => <Tag key={idx}>{am}</Tag>)}
-            </Space>
-          ) : '—'}
-        </Descriptions.Item>
-      </Descriptions>
+      </div>
 
-      <Title level={4}>预订</Title>
+      {/* 图集展示 */}
+      <Card
+        title={<Space><EnvironmentOutlined style={{ color: '#1890ff' }} /> 图集预览</Space>}
+        style={{
+          borderRadius: 16,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        }}
+        headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+      >
+        <Image.PreviewGroup>
+          <Row gutter={[16, 16]}>
+            {images.length ? images.map((u, i) => (
+              <Col xs={24} sm={12} md={8} lg={6} key={i}>
+                <div style={{
+                  position: 'relative',
+                  overflow: 'hidden',
+                  borderRadius: 12,
+                  cursor: 'pointer',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={(e) => {
+                  const img = e.currentTarget.querySelector('img');
+                  if (img) {
+                    img.style.transform = 'scale(1.1)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  const img = e.currentTarget.querySelector('img');
+                  if (img) {
+                    img.style.transform = 'scale(1)';
+                  }
+                }}
+                >
+                  <Image 
+                    src={u} 
+                    width="100%" 
+                    height={180} 
+                    style={{ 
+                      objectFit: 'cover',
+                      borderRadius: 12,
+                      transition: 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    }} 
+                  />
+                </div>
+              </Col>
+            )) : (
+              <Col span={24}>
+                <div style={{
+                  textAlign: 'center',
+                  padding: '40px 20px',
+                  background: isDarkMode ? token.colorBgLayout : '#fafafa',
+                  borderRadius: 12,
+                }}>
+                  <Text type="secondary">暂无图片</Text>
+                </div>
+              </Col>
+            )}
+          </Row>
+        </Image.PreviewGroup>
+      </Card>
+      {/* 房型信息 */}
+      <Row gutter={[20, 20]}>
+        {/* 价格和库存 */}
+        <Col xs={24} md={12}>
+          <Card
+            hoverable
+            style={{
+              borderRadius: 16,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+              height: '100%',
+            }}
+            bodyStyle={{ padding: '24px' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <div style={{
+                background: 'linear-gradient(135deg, #fa8c16 0%, #faad14 100%)',
+                borderRadius: 12,
+                padding: '20px 24px',
+                textAlign: 'center',
+              }}>
+                <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 16 }}>房价</Text>
+                <Title level={1} style={{ color: '#fff', margin: '8px 0 0', fontSize: 48, fontWeight: 700 }}>
+                  ¥{priceDisplay}
+                </Title>
+                <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>每晚</Text>
+              </div>
+              
+              {pricingSummary && pricingSummary.rate < 1 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+                  border: '1px solid #b7eb8f',
+                  borderRadius: 12,
+                  padding: '16px 20px',
+                  textAlign: 'center',
+                }}>
+                  <Space direction="vertical" size={4}>
+                    <Space>
+                      <GiftOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+                      <Text strong style={{ color: '#52c41a', fontSize: 16 }}>会员专享价</Text>
+                    </Space>
+                    <Title level={2} style={{ color: '#52c41a', margin: '4px 0', fontSize: 36 }}>
+                      ¥{pricingSummary.nightlyDiscountedPrice.toFixed(2)}
+                    </Title>
+                    <Tag color="success" style={{ fontSize: 13, padding: '2px 10px', borderRadius: 6 }}>
+                      {Math.round(pricingSummary.rate * 100)}% 折扣
+                    </Tag>
+                  </Space>
+                </div>
+              )}
+
+              <Divider style={{ margin: '8px 0' }} />
+              
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Card size="small" style={{ background: isDarkMode ? '#262626' : '#f5f5f5', border: 'none', textAlign: 'center' }}>
+                    <Statistic
+                      title={<Space><HomeOutlined /> 剩余</Space>}
+                      value={Number.isNaN(availableCountValue) ? room.availableCount : availableCountValue}
+                      suffix={`/ ${Number.isNaN(totalCountValue) ? room.totalCount : totalCountValue}`}
+                      valueStyle={{ color: availableCountValue > 5 ? '#52c41a' : '#fa541c', fontSize: 24 }}
+                    />
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card size="small" style={{ background: isDarkMode ? '#262626' : '#f5f5f5', border: 'none', textAlign: 'center' }}>
+                    <Statistic
+                      title={<Space><UserOutlined /> 最大入住</Space>}
+                      value={maxGuestsDisplay}
+                      suffix="人"
+                      valueStyle={{ color: '#1890ff', fontSize: 24 }}
+                    />
+                  </Card>
+                </Col>
+              </Row>
+            </Space>
+          </Card>
+        </Col>
+        
+        {/* 房型详情 */}
+        <Col xs={24} md={12}>
+          <Card
+            title={<Space><StarFilled style={{ color: '#faad14' }} /> 房型详情</Space>}
+            hoverable
+            style={{
+              borderRadius: 16,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+              height: '100%',
+            }}
+            headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Descriptions column={1} size="middle">
+              <Descriptions.Item label={<Text strong>房型描述</Text>}>
+                <Paragraph style={{ margin: 0 }}>{room.description || '—'}</Paragraph>
+              </Descriptions.Item>
+              <Descriptions.Item label={<Text strong>面积</Text>}>
+                <Tag color="blue" style={{ fontSize: 14, padding: '4px 12px', borderRadius: 6 }}>
+                  {room.areaSqm ? `${room.areaSqm} ㎡` : '—'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label={<Text strong>床型</Text>}>
+                <Tag color="purple" style={{ fontSize: 14, padding: '4px 12px', borderRadius: 6 }}>
+                  {room.bedType || '—'}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label={<Text strong>设施</Text>}>
+                {amenities.length ? (
+                  <Space wrap size={[8, 8]}>
+                    {amenities.map((am, idx) => (
+                      <Tag 
+                        key={idx}
+                        color="geekblue"
+                        style={{ 
+                          fontSize: 13, 
+                          padding: '4px 10px', 
+                          borderRadius: 6,
+                          border: '1px solid #adc6ff',
+                        }}
+                      >
+                        <CheckCircleOutlined /> {am}
+                      </Tag>
+                    ))}
+                  </Space>
+                ) : '—'}
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* 预订标题 */}
+      <div style={{
+        background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+        borderRadius: 16,
+        padding: '24px 32px',
+        boxShadow: '0 4px 12px rgba(24, 144, 255, 0.25)',
+      }}>
+        <Title level={3} style={{ color: '#fff', margin: 0, fontWeight: 700 }}>
+          <Space>
+            <CalendarOutlined />
+            在线预订
+          </Space>
+        </Title>
+      </div>
       {!user && (
         <Space>
           <Typography.Text type="secondary">登入/注册后才能预订。</Typography.Text>
@@ -626,33 +872,149 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
         </Space>
       )}
       {user && (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          {isAdmin ? (
+        <Space direction="vertical" size={20} style={{ width: '100%' }}>
+          {isAdmin && (
             <Alert
               showIcon
               type="info"
-              message="管理员可在此为客户创建预订"
-              description="系统会根据联系电话自动匹配或创建客户账号（新账号初始密码：123456），请务必填写正确电话。"
+              icon={<SafetyCertificateOutlined />}
+              message={<Text strong>管理员代客预订</Text>}
+              description="系统会根据联系电话自动匹配或创建客户账号，新账号用户名和初始密码均为电话号码。"
+              style={{
+                borderRadius: 12,
+                background: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+                border: '1px solid #91d5ff',
+              }}
             />
-          ) : null}
+          )}
+          
           {pricingSummary && (
-            <Card size="small" title="费用概览">
-              <Space size={24} wrap>
-                <Statistic title="入住天数" value={pricingSummary.days} suffix="晚" precision={0} />
-                <Statistic title="原价合计" prefix="¥" value={pricingSummary.originalAmount} precision={2} />
-                <Statistic title="折扣金额" prefix="-¥" value={pricingSummary.discountAmount} precision={2} valueStyle={{ color: '#52c41a' }} />
-                <Statistic title="应付金额" prefix="¥" value={pricingSummary.payableAmount} precision={2} valueStyle={{ color: '#fa541c' }} />
+            <Card 
+              hoverable
+              style={{
+                borderRadius: 16,
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+                transition: 'all 0.3s ease',
+                background: 'linear-gradient(135deg, #ffffff 0%, #f5f5f5 100%)',
+              }}
+              bodyStyle={{ padding: '28px 32px' }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-4px)';
+                e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+              }}
+            >
+              <Space direction="vertical" size={20} style={{ width: '100%' }}>
+                <Title level={4} style={{ margin: 0 }}>
+                  <Space><ThunderboltOutlined style={{ color: '#fa8c16' }} /> 费用概览</Space>
+                </Title>
+                
+                <Row gutter={[20, 20]}>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+                      borderRadius: 12,
+                      padding: '20px',
+                      textAlign: 'center',
+                      border: '1px solid #91d5ff',
+                    }}>
+                      <Statistic
+                        title={<Text style={{ color: '#1890ff', fontWeight: 600 }}>入住天数</Text>}
+                        value={pricingSummary.days}
+                        suffix="晚"
+                        precision={0}
+                        valueStyle={{ color: '#1890ff', fontSize: 32, fontWeight: 700 }}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%)',
+                      borderRadius: 12,
+                      padding: '20px',
+                      textAlign: 'center',
+                      border: '1px solid #d9d9d9',
+                    }}>
+                      <Statistic
+                        title={<Text style={{ color: '#595959', fontWeight: 600 }}>原价合计</Text>}
+                        prefix="¥"
+                        value={pricingSummary.originalAmount}
+                        precision={2}
+                        valueStyle={{ color: '#595959', fontSize: 28, fontWeight: 700 }}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+                      borderRadius: 12,
+                      padding: '20px',
+                      textAlign: 'center',
+                      border: '1px solid #b7eb8f',
+                    }}>
+                      <Statistic
+                        title={<Text style={{ color: '#52c41a', fontWeight: 600 }}>折扣金额</Text>}
+                        prefix="-¥"
+                        value={pricingSummary.discountAmount}
+                        precision={2}
+                        valueStyle={{ color: '#52c41a', fontSize: 28, fontWeight: 700 }}
+                      />
+                    </div>
+                  </Col>
+                  <Col xs={24} sm={12} md={6}>
+                    <div style={{
+                      background: 'linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%)',
+                      borderRadius: 12,
+                      padding: '20px',
+                      textAlign: 'center',
+                      border: '2px solid #ff7875',
+                    }}>
+                      <Statistic
+                        title={<Text style={{ color: '#fa541c', fontWeight: 600 }}>应付金额</Text>}
+                        prefix="¥"
+                        value={pricingSummary.payableAmount}
+                        precision={2}
+                        valueStyle={{ color: '#fa541c', fontSize: 32, fontWeight: 700 }}
+                      />
+                    </div>
+                  </Col>
+                </Row>
+                
+                {paymentMethodValue === 'WALLET' && walletBalance != null && (
+                  <>
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Alert
+                      showIcon
+                      type={isWalletSufficient ? 'success' : 'warning'}
+                      icon={<WalletOutlined />}
+                      message={
+                        <Space>
+                          <Text strong>钱包余额：</Text>
+                          <Text strong style={{ fontSize: 16, color: isWalletSufficient ? '#52c41a' : '#fa8c16' }}>
+                            ¥{walletBalance.toFixed(2)}
+                          </Text>
+                          {!isWalletSufficient && <Text type="danger">（余额不足，请充值或改用其他方式）</Text>}
+                        </Space>
+                      }
+                      style={{ borderRadius: 10 }}
+                    />
+                  </>
+                )}
               </Space>
-              {paymentMethodValue === 'WALLET' && walletBalance != null && (
-                <>
-                  <Divider style={{ margin: '12px 0' }} />
-                  <Text type={isWalletSufficient ? 'success' : 'danger'}>
-                    钱包余额：¥{walletBalance.toFixed(2)} {isWalletSufficient ? '' : '（余额不足，请充值或改用其他方式）'}
-                  </Text>
-                </>
-              )}
             </Card>
           )}
+          
+          <Card
+            title={<Space><CalendarOutlined style={{ color: '#1890ff' }} /> 预订信息</Space>}
+            style={{
+              borderRadius: 16,
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+            }}
+            headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+          >
           <Form
             form={form}
             layout="vertical"
@@ -669,85 +1031,140 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
               paymentChannel: defaultPaymentChannel
             }}
           >
-            <Space direction="vertical" style={{ width: '100%' }}>
-              <Form.Item name="hotelId" hidden>
-                <Input type="hidden" />
-              </Form.Item>
-              <Form.Item
-                name="range"
-                label="入住与离店日期"
-                rules={[{ required: true, message: '请选择入住与离店日期' }]}
-                extra={rangeHelp}
-              >
-                <Popover
-                  trigger="click"
-                  placement="bottomLeft"
-                  open={rangePanelOpen}
-                  onOpenChange={handleRangePopoverOpenChange}
-                  destroyTooltipOnHide
-                  overlayClassName="stay-range-popover"
-                  content={(
-                    <div className={isCompactCalendar ? 'stay-range-popover-content stay-range-popover-content--compact' : 'stay-range-popover-content'}>
-                      <DateRange
-                        onChange={handleDraftRangeChange}
-                        moveRangeOnFirstSelection={false}
-                        ranges={[{
-                          startDate: draftSelection.start,
-                          endDate: draftSelection.end,
-                          key: 'selection'
-                        }]}
-                        showDateDisplay={false}
-                        rangeColors={['#1677ff']}
-                        direction={calendarDirection}
-                        months={calendarMonths}
-                        minDate={dayjs().startOf('day').toDate()}
-                      />
-                      <div className="stay-range-popover-actions">
-                        <Space size={8}>
-                          <Button size="small" onClick={handleRangeCancel}>取消</Button>
-                          <Button size="small" type="primary" onClick={handleRangeConfirm}>确定</Button>
-                        </Space>
-                      </div>
-                    </div>
-                  )}
+            <Row gutter={[20, 20]}>
+              <Col span={24}>
+                <Form.Item name="hotelId" hidden>
+                  <Input type="hidden" />
+                </Form.Item>
+                <Form.Item
+                  name="range"
+                  label={<Text strong style={{ fontSize: 15 }}><CalendarOutlined /> 入住与离店日期</Text>}
+                  rules={[{ required: true, message: '请选择入住与离店日期' }]}
+                  extra={rangeHelp}
                 >
-                  <Input
-                    className="stay-range-input"
-                    readOnly
-                    value={rangeDisplay || ''}
-                    placeholder="选择入住与离店日期"
-                    suffix={<CalendarOutlined />}
-                    onClick={() => handleRangePopoverOpenChange(true)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleRangePopoverOpenChange(true);
-                      }
-                    }}
+                  <Popover
+                    trigger="click"
+                    placement="bottomLeft"
+                    open={rangePanelOpen}
+                    onOpenChange={handleRangePopoverOpenChange}
+                    destroyTooltipOnHide
+                    overlayClassName="stay-range-popover"
+                    content={(
+                      <div className={isCompactCalendar ? 'stay-range-popover-content stay-range-popover-content--compact' : 'stay-range-popover-content'}>
+                        <DateRange
+                          onChange={handleDraftRangeChange}
+                          moveRangeOnFirstSelection={false}
+                          ranges={[{
+                            startDate: draftSelection.start,
+                            endDate: draftSelection.end,
+                            key: 'selection'
+                          }]}
+                          showDateDisplay={false}
+                          rangeColors={['#1677ff']}
+                          direction={calendarDirection}
+                          months={calendarMonths}
+                          minDate={dayjs().startOf('day').toDate()}
+                        />
+                        <div className="stay-range-popover-actions">
+                          <Space size={8}>
+                            <Button size="small" onClick={handleRangeCancel}>取消</Button>
+                            <Button size="small" type="primary" onClick={handleRangeConfirm}>确定</Button>
+                          </Space>
+                        </div>
+                      </div>
+                    )}
+                  >
+                    <Input
+                      className="stay-range-input"
+                      readOnly
+                      size="large"
+                      value={rangeDisplay || ''}
+                      placeholder="选择入住与离店日期"
+                      suffix={<CalendarOutlined />}
+                      onClick={() => handleRangePopoverOpenChange(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleRangePopoverOpenChange(true);
+                        }
+                      }}
+                      style={{ borderRadius: 10 }}
+                    />
+                  </Popover>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} md={12}>
+                <Form.Item
+                  name="arrivalTime"
+                  label={<Text strong style={{ fontSize: 15 }}><ClockCircleOutlined /> 预计到店时间</Text>}
+                  rules={[{ required: true, message: '请选择预计到店时间' }]}
+                >
+                  <TimePicker
+                    format="HH:mm"
+                    minuteStep={15}
+                    allowClear={false}
+                    size="large"
+                    style={{ width: '100%', borderRadius: 10 }}
                   />
-                </Popover>
-              </Form.Item>
-              <Form.Item
-                name="arrivalTime"
-                label="预计到店时间"
-                rules={[{ required: true, message: '请选择预计到店时间' }]}
-              >
-                <TimePicker
-                  format="HH:mm"
-                  minuteStep={15}
-                  allowClear={false}
-                  style={{ width: 160 }}
-                />
-              </Form.Item>
-              <Form.Item name="guests" label="入住人数" rules={[{ required: true, message: '请输入人数' }]}>
-                <InputNumber min={1} max={maxGuestsLimit || 10} style={{ width: 160 }} />
-              </Form.Item>
-              <Form.Item name="contactName" label="联系人姓名" rules={[{ required: true, message: '请输入联系人姓名' }]}>
-                <Input placeholder="请输入联系人姓名" />
-              </Form.Item>
-              <Form.Item name="contactPhone" label="联系电话" rules={[{ required: true, message: '请输入联系电话' }]}>
-                <Input placeholder="请输入联系电话" />
-              </Form.Item>
+                </Form.Item>
+              </Col>
+              
+              <Col xs={24} md={12}>
+                <Form.Item 
+                  name="guests" 
+                  label={<Text strong style={{ fontSize: 15 }}><UserOutlined /> 入住人数</Text>} 
+                  rules={[{ required: true, message: '请输入人数' }]}
+                >
+                  <InputNumber 
+                    min={1} 
+                    max={maxGuestsLimit || 10} 
+                    size="large"
+                    style={{ width: '100%', borderRadius: 10 }} 
+                  />
+                </Form.Item>
+              </Col>
+              
+              {!isAdmin && (
+                <Col xs={24} md={12}>
+                  <Form.Item 
+                    name="contactName" 
+                    label={<Text strong style={{ fontSize: 15 }}><UserOutlined /> 联系人姓名</Text>} 
+                    rules={[{ required: true, message: '请输入联系人姓名' }]}
+                  >
+                    <Input 
+                      placeholder="请输入联系人姓名" 
+                      size="large"
+                      prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
+                      style={{ borderRadius: 10 }}
+                    />
+                  </Form.Item>
+                </Col>
+              )}
+              
+              <Col xs={24} md={isAdmin ? 24 : 12}>
+                <Form.Item 
+                  name="contactPhone" 
+                  label={<Text strong style={{ fontSize: 15 }}><PhoneOutlined /> 联系电话</Text>}
+                  tooltip={isAdmin ? "输入客户电话号码，系统将自动查找或创建用户账号（用户名和密码均为电话号码）" : undefined}
+                  rules={[
+                    { required: true, message: '请输入联系电话' },
+                    { 
+                      pattern: /^(1[3-9]\d{9}|\+?[1-9]\d{1,14})$/, 
+                      message: '请输入正确的手机号（国内11位或国际号码）' 
+                    }
+                  ]}
+                >
+                  <Input 
+                    placeholder={isAdmin ? "输入电话号码自动创建/查找用户" : "请输入手机号（国内11位或国际号码）"} 
+                    maxLength={20}
+                    size="large"
+                    prefix={<PhoneOutlined style={{ color: '#bfbfbf' }} />}
+                    style={{ borderRadius: 10 }}
+                  />
+                </Form.Item>
+              </Col>
+              
               {isAdmin ? (
                 <>
                   <Form.Item name="paymentMethod" hidden>
@@ -758,73 +1175,127 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
                   </Form.Item>
                 </>
               ) : (
-                <Form.Item name="paymentMethod" label="支付方式" rules={[{ required: true, message: '请选择支付方式' }]}>
-                  <Radio.Group>
-                    <Radio.Button value="WALLET">
-                      <Space size={6} align="center">
-                        <WalletOutlined />
-                        <span>钱包支付{walletBalance != null ? `（余额 ¥${walletBalance.toFixed(2)}）` : ''}</span>
-                      </Space>
-                    </Radio.Button>
-                    <Radio.Button value="ONLINE">
-                      <Space size={6} align="center">
-                        <WechatOutlined />
-                        <span>在线支付</span>
-                      </Space>
-                    </Radio.Button>
-                    <Radio.Button value="ARRIVAL">
-                      <Space size={6} align="center">
-                        <DollarCircleOutlined />
-                        <span>到店支付</span>
-                      </Space>
-                    </Radio.Button>
-                  </Radio.Group>
-                </Form.Item>
-              )}
-              <Form.Item shouldUpdate noStyle>
-                {({ getFieldValue }) => getFieldValue('paymentMethod') === 'ONLINE' ? (
-                  <Form.Item name="paymentChannel" label="在线支付渠道" rules={[{ required: true, message: '请选择在线支付渠道' }]}> 
-                    <Radio.Group>
-                      <Radio.Button value="WECHAT">
+                <Col span={24}>
+                  <Form.Item 
+                    name="paymentMethod" 
+                    label={<Text strong style={{ fontSize: 15 }}><WalletOutlined /> 支付方式</Text>}
+                    rules={[{ required: true, message: '请选择支付方式' }]}
+                  >
+                    <Radio.Group size="large" style={{ width: '100%' }}>
+                      <Radio.Button value="WALLET" style={{ borderRadius: 10, marginRight: 12, marginBottom: 12 }}>
+                        <Space size={6} align="center">
+                          <WalletOutlined />
+                          <span>钱包支付{walletBalance != null ? `（余额 ¥${walletBalance.toFixed(2)}）` : ''}</span>
+                        </Space>
+                      </Radio.Button>
+                      <Radio.Button value="ONLINE" style={{ borderRadius: 10, marginRight: 12, marginBottom: 12 }}>
                         <Space size={6} align="center">
                           <WechatOutlined />
-                          <span>微信支付</span>
+                          <span>在线支付</span>
                         </Space>
                       </Radio.Button>
-                      <Radio.Button value="PAYPAL">
+                      <Radio.Button value="ARRIVAL" style={{ borderRadius: 10, marginBottom: 12 }}>
                         <Space size={6} align="center">
                           <DollarCircleOutlined />
-                          <span>PayPal</span>
-                        </Space>
-                      </Radio.Button>
-                      <Radio.Button value="VISA">
-                        <Space size={6} align="center">
-                          <CreditCardOutlined />
-                          <span>Visa</span>
+                          <span>到店支付</span>
                         </Space>
                       </Radio.Button>
                     </Radio.Group>
                   </Form.Item>
-                ) : null}
-              </Form.Item>
-              <Form.Item shouldUpdate noStyle>
-                {({ getFieldValue }) => getFieldValue('paymentMethod') === 'ARRIVAL' ? (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message="到店支付提醒"
-                    description="请在办理入住时于前台完成支付，房间将为您保留至到店时间当日。"
+                </Col>
+              )}
+              
+              <Col span={24}>
+                <Form.Item shouldUpdate noStyle>
+                  {({ getFieldValue }) => getFieldValue('paymentMethod') === 'ONLINE' ? (
+                    <Form.Item 
+                      name="paymentChannel" 
+                      label={<Text strong style={{ fontSize: 15 }}>在线支付渠道</Text>}
+                      rules={[{ required: true, message: '请选择在线支付渠道' }]}
+                    > 
+                      <Radio.Group size="large">
+                        <Radio.Button value="WECHAT" style={{ borderRadius: 10, marginRight: 12 }}>
+                          <Space size={6} align="center">
+                            <WechatOutlined />
+                            <span>微信支付</span>
+                          </Space>
+                        </Radio.Button>
+                        <Radio.Button value="PAYPAL" style={{ borderRadius: 10, marginRight: 12 }}>
+                          <Space size={6} align="center">
+                            <DollarCircleOutlined />
+                            <span>PayPal</span>
+                          </Space>
+                        </Radio.Button>
+                        <Radio.Button value="VISA" style={{ borderRadius: 10 }}>
+                          <Space size={6} align="center">
+                            <CreditCardOutlined />
+                            <span>Visa</span>
+                          </Space>
+                        </Radio.Button>
+                      </Radio.Group>
+                    </Form.Item>
+                  ) : null}
+                </Form.Item>
+              </Col>
+              
+              <Col span={24}>
+                <Form.Item shouldUpdate noStyle>
+                  {({ getFieldValue }) => getFieldValue('paymentMethod') === 'ARRIVAL' ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      icon={<ClockCircleOutlined />}
+                      message={<Text strong>到店支付提醒</Text>}
+                      description="请在办理入住时于前台完成支付，房间将为您保留至到店时间当日。"
+                      style={{
+                        borderRadius: 12,
+                        background: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
+                        border: '1px solid #ffd591',
+                      }}
+                    />
+                  ) : null}
+                </Form.Item>
+              </Col>
+              
+              <Col span={24}>
+                <Form.Item 
+                  name="remark" 
+                  label={<Text strong style={{ fontSize: 15 }}>备注</Text>}
+                >
+                  <Input.TextArea 
+                    rows={4} 
+                    placeholder="可选，填写特殊需求" 
+                    size="large"
+                    style={{ borderRadius: 10 }}
                   />
-                ) : null}
-              </Form.Item>
-              <Form.Item name="remark" label="备注">
-                <Input.TextArea rows={3} placeholder="可选，填写特殊需求" />
-              </Form.Item>
-              <Form.Item>
-                <Button type="primary" htmlType="submit" loading={bookingLoading} disabled={!isActive || Number(room.availableCount) <= 0}>{isAdmin ? '创建预约' : '立即预订'}</Button>
-              </Form.Item>
-            </Space>
+                </Form.Item>
+              </Col>
+              
+              <Col span={24}>
+                <Form.Item>
+                  <Button 
+                    type="primary" 
+                    htmlType="submit" 
+                    loading={bookingLoading} 
+                    disabled={!isActive || Number(room.availableCount) <= 0}
+                    icon={<CheckCircleOutlined />}
+                    size="large"
+                    block
+                    style={{
+                      height: 52,
+                      borderRadius: 10,
+                      fontSize: 16,
+                      fontWeight: 700,
+                      boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)',
+                    }}
+                  >
+                    {isAdmin ? '为客户创建预约' : '立即预订'}
+                  </Button>
+                </Form.Item>
+              </Col>
+            </Row>
           </Form>
+        </Card>
         </Space>
       )}
       <RoomVRViewer

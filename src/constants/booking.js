@@ -1,11 +1,12 @@
 export const BOOKING_STATUS_META = {
   PENDING: { label: '待审核', color: 'gold' },
-  PENDING_CONFIRMATION: { label: '待确认', color: 'gold' },
-  PENDING_PAYMENT: { label: '待到店支付', color: 'orange' },
+  PENDING_CONFIRMATION: { label: '待确认', color: 'orange' },
+  PENDING_PAYMENT: { label: '待到店支付', color: 'volcano' },
   CONFIRMED: { label: '已确认', color: 'green' },
   CHECKED_IN: { label: '已入住', color: 'cyan' },
   CHECKED_OUT: { label: '已退房', color: 'blue' },
-  CANCELLED: { label: '已取消', color: 'red' },
+  CANCELLED: { label: '已取消', color: 'default' },
+  REFUND_REQUESTED: { label: '退款申请中', color: 'magenta' },
   REFUNDED: { label: '已退款', color: 'purple' },
 };
 

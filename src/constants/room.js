@@ -1,4 +1,10 @@
 export const ROOM_STATUS_META = {
+	0: {
+		label: '锁定',
+		color: '#8c8c8c',
+		bgColor: '#fafafa',
+		description: '房间已锁定，不可用',
+	},
 	1: {
 		label: '空房',
 		color: '#389e0d',

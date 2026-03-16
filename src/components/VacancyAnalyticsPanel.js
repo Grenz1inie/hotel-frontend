@@ -155,9 +155,13 @@ function persistCache(map) {
 	}
 }
 
-function cacheAnalytics(key, payload) {
+function cacheAnalytics(key, payload, isHistorical = false) {
 	const map = getCacheMap();
-	map.set(key, { payload, timestamp: Date.now() });
+	map.set(key, { 
+		payload, 
+		timestamp: Date.now(),
+		isHistorical // 标记是否为历史数据
+	});
 	if (map.size > CACHE_MAX_ENTRIES) {
 		const ordered = Array.from(map.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
 		const trimmed = ordered.slice(ordered.length - CACHE_MAX_ENTRIES);
@@ -167,11 +171,16 @@ function cacheAnalytics(key, payload) {
 	persistCache(map);
 }
 
-function getCachedAnalytics(key, ttl = 10 * 60 * 1000) {
+function getCachedAnalytics(key, ttl) {
 	const map = getCacheMap();
 	const cached = map.get(key);
 	if (!cached) return null;
-	if (Date.now() - cached.timestamp > ttl) {
+	
+	// 历史数据缓存时间更长（4小时），实时数据缓存时间短（10分钟）
+	const defaultTTL = cached.isHistorical ? 4 * 60 * 60 * 1000 : 10 * 60 * 1000;
+	const effectiveTTL = ttl !== undefined ? ttl : defaultTTL;
+	
+	if (Date.now() - cached.timestamp > effectiveTTL) {
 		map.delete(key);
 		persistCache(map);
 		return null;
@@ -217,6 +226,7 @@ export default function VacancyAnalyticsPanel() {
 	const [recentFilters, setRecentFilters] = React.useState(() => readFilterSnapshots());
 	const [lastAppliedFilters, setLastAppliedFilters] = React.useState(null);
 	const [error, setError] = React.useState(null);
+	const [dataSource, setDataSource] = React.useState(null); // 新增：数据来源标识
 	const chartInstanceRef = React.useRef(null);
 	const chartViewStateRef = React.useRef(null);
 	const debouncedReloadRef = React.useRef(null);
@@ -240,7 +250,14 @@ export default function VacancyAnalyticsPanel() {
 				const normalized = Array.isArray(data) ? data.filter(r => r && r.id != null) : [];
 				setRooms(normalized);
 				if (normalized.length && selectedRooms.length === 0) {
-					setSelectedRooms(normalized.slice(0, Math.min(3, normalized.length)).map(r => r.id));
+					// 默认选择"云栖禅意套房"
+					const yunqiRoom = normalized.find(r => r.name && r.name.includes('云栖禅意套房'));
+					if (yunqiRoom) {
+						setSelectedRooms([yunqiRoom.id]);
+					} else {
+						// 如果找不到"云栖禅意套房"，则默认选择第一个房型
+						setSelectedRooms([normalized[0].id]);
+					}
 				}
 			} catch (e) {
 				message.error('房型列表加载失败');
@@ -251,17 +268,6 @@ export default function VacancyAnalyticsPanel() {
 		loadRooms();
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
-
-	const buildFilterSnapshot = React.useCallback(() => ({
-		selectedRooms,
-		metric,
-		granularity,
-		rangePreset,
-		customRange: customRange ? customRange.map(value => (value ? value.toISOString() : null)) : null,
-		thresholdHigh,
-		thresholdLow,
-		includeForecast,
-	}), [customRange, granularity, includeForecast, metric, rangePreset, selectedRooms, thresholdHigh, thresholdLow]);
 
 	const loadAnalytics = React.useCallback(async (overrides = {}) => {
 		const appliedRooms = overrides.selectedRooms ?? selectedRooms;
@@ -288,6 +294,7 @@ export default function VacancyAnalyticsPanel() {
 		if (cached) {
 			setAnalytics(cached);
 			setError(null);
+			setDataSource('cache'); // 标记为缓存数据
 		}
 		try {
 			setLoading(true);
@@ -296,7 +303,13 @@ export default function VacancyAnalyticsPanel() {
 			if (pendingFiltersRef.current !== cacheKey) return;
 			setAnalytics(payload);
 			setError(null);
-			cacheAnalytics(cacheKey, payload);
+			
+			// 判断数据来源：如果查询的是历史数据，则来自数据库；否则为实时计算
+			const now = dayjs();
+			const isHistoricalData = rangeEnd.isBefore(now, 'day');
+			setDataSource(isHistoricalData ? 'database' : 'realtime');
+			
+			cacheAnalytics(cacheKey, payload, isHistoricalData);
 			const snapshot = {
 				filters: {
 					selectedRooms: appliedRooms,
@@ -610,24 +623,12 @@ export default function VacancyAnalyticsPanel() {
 				{
 					xAxis: start.valueOf(),
 					lineStyle: { color, type: 'dashed', width: 1 },
-					label: {
-						formatter: `${alert.reason}\n实际 ${actualPercent}%`,
-						color,
-						rotate: 90,
-						fontSize: 12,
-						align: 'left',
-					},
+					label: { show: false }, // 不显示标签，只在tooltip中显示
 				},
 				{
 					xAxis: end.valueOf(),
 					lineStyle: { color, type: 'dashed', width: 1 },
-					label: {
-						formatter: `${alert.reason}\n阈值 ${thresholdPercent}%`,
-						color,
-						rotate: 90,
-						fontSize: 12,
-						align: 'left',
-					},
+					label: { show: false }, // 不显示标签，只在tooltip中显示
 				},
 			];
 		});
@@ -635,20 +636,43 @@ export default function VacancyAnalyticsPanel() {
 
 	const eventLines = React.useMemo(() => {
 		if (!analytics?.events?.length) return [];
-		return analytics.events.map(event => {
+		return analytics.events.flatMap(event => {
 			const timestamp = dayjs(event.timestamp);
-			if (!timestamp.isValid()) return null;
-			return {
+			const endTimestamp = event.endTimestamp ? dayjs(event.endTimestamp) : null;
+			
+			if (!timestamp.isValid()) return [];
+			
+			const lines = [];
+			
+			// 开始标记
+			lines.push({
 				xAxis: timestamp.valueOf(),
-				lineStyle: { color: '#faad14', type: 'dotted', width: 1 },
+				lineStyle: { color: '#faad14', type: 'dotted', width: 2 },
 				label: {
-					formatter: `${event.title}`,
+					formatter: `${event.title}\n开始`,
 					color: '#faad14',
 					rotate: 90,
-					fontSize: 12,
+					fontSize: 11,
 					align: 'left',
 				},
-			};
+			});
+			
+			// 如果有结束时间且不同于开始时间，添加结束标记
+			if (endTimestamp && endTimestamp.isValid() && !endTimestamp.isSame(timestamp, 'day')) {
+				lines.push({
+					xAxis: endTimestamp.valueOf(),
+					lineStyle: { color: '#faad14', type: 'dotted', width: 2 },
+					label: {
+						formatter: `${event.title}\n结束`,
+						color: '#faad14',
+						rotate: 90,
+						fontSize: 11,
+						align: 'left',
+					},
+				});
+			}
+			
+			return lines;
 		}).filter(Boolean);
 	}, [analytics]);
 
@@ -675,7 +699,8 @@ export default function VacancyAnalyticsPanel() {
 		let currentLow = null;
 		dataset.filter(row => !row.forecast).forEach(row => {
 			const time = row.timestamp.getTime();
-			if (row.vacancyRate != null && row.vacancyRate >= previewThresholds.high) {
+			// 只在真正超出阈值时标记（不包括等于）
+			if (row.vacancyRate != null && row.vacancyRate > previewThresholds.high) {
 				if (!currentHigh) {
 					currentHigh = { start: time };
 				}
@@ -683,7 +708,7 @@ export default function VacancyAnalyticsPanel() {
 				high.push([currentHigh.start, time]);
 				currentHigh = null;
 			}
-			if (row.vacancyRate != null && row.vacancyRate <= previewThresholds.low) {
+			if (row.vacancyRate != null && row.vacancyRate < previewThresholds.low) {
 				if (!currentLow) {
 					currentLow = { start: time };
 				}
@@ -738,6 +763,24 @@ export default function VacancyAnalyticsPanel() {
 			group.actual.sort((a, b) => a.value[0] - b.value[0]);
 			group.forecast.sort((a, b) => a.value[0] - b.value[0]);
 			if (group.actual.length) {
+				// 为每个数据点设置样式：超出阈值的点标记为红色
+				const styledData = group.actual.map(point => {
+					const vacancyRate = point.rawDatum?.vacancyRate;
+					const isOutOfThreshold = vacancyRate != null && 
+						(vacancyRate > previewThresholds.high || vacancyRate < previewThresholds.low);
+					
+					return {
+						...point,
+						// 超出阈值的点：红色、大尺寸
+						itemStyle: isOutOfThreshold ? {
+							color: COLORS.alertHigh,
+							borderColor: COLORS.alertHigh,
+							borderWidth: 2
+						} : undefined,
+						symbolSize: isOutOfThreshold ? 10 : 6,
+					};
+				});
+				
 				seriesList.push({
 					name,
 					type: 'line',
@@ -748,7 +791,7 @@ export default function VacancyAnalyticsPanel() {
 					emphasis: { focus: 'series' },
 					lineStyle: { width: 2 },
 					itemStyle: { opacity: 0.95 },
-					data: group.actual,
+					data: styledData,
 				});
 				legendEntries.add(name);
 			}
@@ -781,7 +824,8 @@ export default function VacancyAnalyticsPanel() {
 			}
 		});
 
-		const markLineData = [...alertLines, ...eventLines];
+		// 只保留事件标记，移除警告线和警告区域
+		const markLineData = [...eventLines];
 		if (seriesList.length) {
 			const [firstSeries, ...rest] = seriesList;
 			const enhancedFirst = {
@@ -789,40 +833,101 @@ export default function VacancyAnalyticsPanel() {
 				lineStyle: { ...firstSeries.lineStyle, color: COLORS.actual },
 				itemStyle: { ...firstSeries.itemStyle, color: COLORS.actual },
 			};
-			if (markLineData.length) {
+			
+			// 添加Y轴阈值线（水平虚线）
+			const thresholdLines = [];
+			if (metric === 'vacancyRate') {
+				// 高阈值线
+				thresholdLines.push({
+					yAxis: previewThresholds.high,
+					lineStyle: { 
+						color: COLORS.alertHigh, 
+						type: 'dashed', 
+						width: 2 
+					},
+					label: {
+						formatter: `高阈值 ${Math.round(previewThresholds.high * 100)}%`,
+						position: 'end',
+						color: COLORS.alertHigh,
+						fontSize: 11
+					}
+				});
+				// 低阈值线
+				thresholdLines.push({
+					yAxis: previewThresholds.low,
+					lineStyle: { 
+						color: COLORS.alertLow, 
+						type: 'dashed', 
+						width: 2 
+					},
+					label: {
+						formatter: `低阈值 ${Math.round(previewThresholds.low * 100)}%`,
+						position: 'end',
+						color: COLORS.alertLow,
+						fontSize: 11
+					}
+				});
+			}
+			
+			if (markLineData.length || thresholdLines.length) {
 				enhancedFirst.markLine = {
 					symbol: ['none', 'none'],
 					silent: true,
 					label: { fontSize: 11, distance: 10 },
-					data: markLineData,
+					data: [...markLineData, ...thresholdLines],
 				};
-				legendEntries.add('阈值预警线');
+				if (thresholdLines.length) {
+					legendEntries.add('阈值线');
+				}
 			}
-			const markAreaData = [...highlightZones.high, ...highlightZones.low];
-			if (markAreaData.length) {
-				enhancedFirst.markArea = {
-					silent: true,
-					itemStyle: { opacity: 0.6 },
-					data: markAreaData,
-				};
-				if (highlightZones.high.length) legendEntries.add('高位预警区');
-				if (highlightZones.low.length) legendEntries.add('低位预警区');
-			}
+			
+			// 移除markArea（红色区域）
+			
 			if (analytics?.events?.length) {
+				// 为每个事件创建标记点（开始和结束）
+				const eventMarkers = analytics.events.flatMap(event => {
+					const startTime = dayjs(event.timestamp).valueOf();
+					const endTime = event.endTimestamp ? dayjs(event.endTimestamp).valueOf() : null;
+					const markers = [];
+					
+					// 开始标记
+					markers.push({
+						name: `${event.title}（开始）`,
+						coord: [startTime, chartStats.max * 0.95],
+						value: chartStats.max,
+						event,
+						symbolSize: endTime && endTime !== startTime ? 38 : 42,
+						label: {
+							formatter: '🎉',
+							color: '#fff',
+							fontSize: 16,
+						},
+					});
+					
+					// 如果有结束时间且与开始时间不同，添加结束标记
+					if (endTime && endTime !== startTime) {
+						markers.push({
+							name: `${event.title}（结束）`,
+							coord: [endTime, chartStats.max * 0.95],
+							value: chartStats.max,
+							event: { ...event, isEndMarker: true },
+							symbolSize: 38,
+							label: {
+								formatter: '🎊',
+								color: '#fff',
+								fontSize: 16,
+							},
+						});
+					}
+					
+					return markers;
+				});
+				
 				enhancedFirst.markPoint = {
 					symbol: 'pin',
 					symbolSize: 42,
 					itemStyle: { color: COLORS.event },
-					data: analytics.events.map(event => ({
-						name: event.title,
-						coord: [dayjs(event.timestamp).valueOf(), chartStats.max],
-						value: chartStats.max,
-						event,
-						label: {
-							formatter: '📅',
-							color: '#fff',
-						},
-					})),
+					data: eventMarkers,
 				};
 				legendEntries.add('关键事件');
 			}
@@ -832,9 +937,7 @@ export default function VacancyAnalyticsPanel() {
 		const legendFormatter = (name) => {
 			if (name.includes('预测')) return `⛅ ${name}`;
 			if (name === '关键事件') return '📅 关键事件';
-			if (name === '高位预警区') return '⚠️ 高位预警区';
-			if (name === '低位预警区') return '🧊 低位预警区';
-			if (name === '阈值预警线') return '⚠️ 阈值线';
+			if (name === '阈值线') return '📏 阈值线';
 			return `● ${name}`;
 		};
 
@@ -857,6 +960,43 @@ export default function VacancyAnalyticsPanel() {
 						granularity === 'HOUR' ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD',
 					);
 					const lines = [`<strong>${time}</strong>`];
+					
+					// 检查当前时间点是否有警告，并使用当前点的实际数据
+					const currentTimestamp = first.value?.[0] ?? first.axisValue;
+					const currentAlerts = analytics?.alerts?.filter(alert => {
+						const start = dayjs(alert.start).valueOf();
+						const end = dayjs(alert.end).valueOf();
+						return currentTimestamp >= start && currentTimestamp <= end;
+					}) || [];
+					
+					// 显示警告信息（使用当前悬停点的实际空置率）
+					if (currentAlerts.length > 0) {
+						// 获取当前点的实际空置率数据
+						const currentPointData = params.find(item => item?.data?.rawDatum && !item?.data?.__connector);
+						const currentVacancyRate = currentPointData?.data?.rawDatum?.vacancyRate;
+						
+						currentAlerts.forEach(alert => {
+							const color = alert.level === 'HIGH' ? COLORS.alertHigh : COLORS.alertLow;
+							// 使用当前点的实际空置率，而不是alert中存储的历史值
+							const actualPercent = currentVacancyRate != null 
+								? Math.round(currentVacancyRate * 100)
+								: Math.round((toFiniteNumber(alert.actual) ?? 0) * 100);
+							const thresholdPercent = Math.round((toFiniteNumber(alert.threshold) ?? 0) * 100);
+							const icon = alert.level === 'HIGH' ? '⚠️' : '🔻';
+							
+							// 只有当前点确实超出阈值时才显示警告
+							const shouldShowAlert = alert.level === 'HIGH' 
+								? (currentVacancyRate > alert.threshold)
+								: (currentVacancyRate < alert.threshold);
+							
+							if (shouldShowAlert || currentVacancyRate == null) {
+								lines.push(`<span style="color:${color}"><strong>${icon} ${alert.reason}</strong></span>`);
+								lines.push(`<span style="color:${color}">实际：${actualPercent}%，阈值：${thresholdPercent}%</span>`);
+							}
+						});
+						lines.push(''); // 空行分隔
+					}
+					
 					const seen = new Set();
 					params.forEach(item => {
 						const datum = item?.data?.rawDatum;
@@ -912,7 +1052,7 @@ export default function VacancyAnalyticsPanel() {
 			],
 			series: seriesList,
 		};
-	}, [alertLines, analytics?.events, chartStats.max, dataset, eventLines, granularity, highlightZones, metric]);
+	}, [analytics?.events, chartStats.max, dataset, eventLines, granularity, metric, previewThresholds]);
 
 	React.useEffect(() => {
 		if (!chartInstanceRef.current || !chartViewStateRef.current?.length) return;
@@ -1116,8 +1256,44 @@ export default function VacancyAnalyticsPanel() {
 						<Text>包含预测</Text>
 						<Switch checked={includeForecast} onChange={setIncludeForecast} />
 					</Space>
+					{dataSource && (
+						<Tooltip 
+							title={
+								dataSource === 'database' 
+									? '历史数据来自数据库预计算，加载速度快' 
+									: dataSource === 'realtime' 
+										? '实时数据根据当前订单计算，反映最新状态'
+										: '数据来自浏览器缓存'
+							}
+						>
+							<Tag 
+								color={
+									dataSource === 'database' 
+										? 'green' 
+										: dataSource === 'realtime' 
+											? 'blue' 
+											: 'default'
+								}
+								icon={
+									dataSource === 'database' 
+										? '💾' 
+										: dataSource === 'realtime' 
+											? '⚡' 
+											: '📦'
+								}
+							>
+								{dataSource === 'database' 
+									? '数据库' 
+									: dataSource === 'realtime' 
+										? '实时' 
+										: '缓存'}
+							</Tag>
+						</Tooltip>
+					)}
 					<Button icon={<UndoOutlined />} onClick={handleUndoFilters} disabled={!lastAppliedFilters}>撤销筛选</Button>
-					<Button icon={<RetweetOutlined />} onClick={() => loadAnalytics({ skipCache: true })} disabled={!selectedRooms.length}>重新加载</Button>
+					<Button icon={<RetweetOutlined />} onClick={() => loadAnalytics({ skipCache: true })} disabled={!selectedRooms.length}>
+						强制刷新
+					</Button>
 					<Button type="primary" onClick={() => loadAnalytics()} disabled={!selectedRooms.length}>应用筛选</Button>
 					<Button onClick={handleExportCsv}>导出CSV</Button>
 					<Button onClick={handleScreenshot}>生成截图</Button>
@@ -1200,12 +1376,34 @@ export default function VacancyAnalyticsPanel() {
 				{analytics?.alerts?.length ? (
 					<Card
 						size="small"
-						title="阈值预警"
+						title={
+							<Space style={{ width: '100%', justifyContent: 'space-between' }}>
+								<Text>阈值预警</Text>
+								<Button 
+									type="text" 
+									size="small" 
+									danger
+									onClick={() => {
+										// 清除预警日志
+										setAnalytics(prev => ({
+											...prev,
+											alerts: []
+										}));
+										message.success('预警日志已清除');
+									}}
+								>
+									清除日志
+								</Button>
+							</Space>
+						}
 						bodyStyle={{ padding: 0 }}
 					>
 						<div style={{ maxHeight: 240, overflowY: 'auto', padding: '8px 16px' }}>
 							<List
-								dataSource={analytics.alerts}
+								dataSource={[...analytics.alerts].sort((a, b) => {
+									// 按开始时间从近到远排序（最新的在上面）
+									return new Date(b.start) - new Date(a.start);
+								})}
 								split={false}
 								renderItem={alert => (
 									<List.Item style={{ padding: '8px 0' }}>
@@ -1249,40 +1447,5 @@ export default function VacancyAnalyticsPanel() {
 				<Tabs items={detailTabs} destroyInactiveTabPane animated={false} defaultActiveKey="overview" />
 			</Modal>
 		</Card>
-	);
-}
-
-function InputNumberWithStep({ value, onChange }) {
-	const [inner, setInner] = React.useState(value);
-
-	React.useEffect(() => { setInner(value); }, [value]);
-
-	return (
-		<Segmented
-			options={[
-				{ label: '20%', value: 0.2 },
-				{ label: '30%', value: 0.3 },
-				{ label: '50%', value: 0.5 },
-				{ label: '70%', value: 0.7 },
-				{ label: '自定义', value: 'custom' },
-			]}
-			value={typeof inner === 'number' ? inner : 'custom'}
-			onChange={(val) => {
-				if (val === 'custom') {
-					const input = window.prompt('请输入阈值（0-1之间的小数）', inner);
-					if (input == null) return;
-					const parsed = Number(input);
-					if (!Number.isNaN(parsed) && parsed >= 0 && parsed <= 1) {
-						onChange(parsed);
-						setInner(parsed);
-					} else {
-						message.error('请输入0到1之间的数');
-					}
-				} else {
-					onChange(val);
-					setInner(val);
-				}
-			}}
-		/>
 	);
 }

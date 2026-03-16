@@ -56,7 +56,9 @@ export function AuthProvider({ children }) {
 
   const register = React.useCallback(async ({ username, password, confirmPassword, phone, email }) => {
     try {
-      const data = await registerApi({ username, password, confirmPassword, phone, email });
+      // 如果用户名为空或只有空格，则使用手机号作为用户名
+      const finalUsername = (username && username.trim()) ? username.trim() : phone;
+      const data = await registerApi({ username: finalUsername, password, confirmPassword, phone, email });
       if (!data?.token || !data?.user) throw new Error('注册响应缺少必要字段');
       setToken(data.token);
       setUser(data.user);
@@ -90,7 +92,21 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
-  const value = React.useMemo(() => ({ user, token, login, logout, register, updateUser, isAuthed: !!user, role: user?.role }), [user, token, login, logout, register, updateUser]);
+  const refreshUser = React.useCallback(async () => {
+    if (!token) return;
+    try {
+      const me = await meApi();
+      if (me && me.id) {
+        setUser(me);
+        localStorage.setItem('auth:user', JSON.stringify(me));
+        return me;
+      }
+    } catch (e) {
+      console.warn('刷新用户信息失败', e);
+    }
+  }, [token]);
+
+  const value = React.useMemo(() => ({ user, token, login, logout, register, updateUser, refreshUser, isAuthed: !!user, role: user?.role }), [user, token, login, logout, register, updateUser, refreshUser]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

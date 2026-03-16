@@ -10,6 +10,7 @@ import { AuthProvider } from './context/AuthContext';
 import ErrorPage from './pages/ErrorPage';
 import HotelLanding from './pages/HotelLanding';
 import AccountCenter from './pages/AccountCenter';
+import MyOrders from './pages/MyOrders';
 
 function RoomListRoute() {
   const navigate = useNavigate();
@@ -43,6 +44,7 @@ export default function App(){
             <Route path="/rooms/:id" element={<RoomDetailRoute/>} />
             <Route path="/admin" element={<RoleRoute role="ADMIN"><AdminDemo/></RoleRoute>} />
             <Route path="/me/profile" element={<ProtectedRoute><AccountCenter/></ProtectedRoute>} />
+            <Route path="/me/orders" element={<ProtectedRoute><MyOrders/></ProtectedRoute>} />
           </Routes>
         </AntLayout>
       </AuthProvider>

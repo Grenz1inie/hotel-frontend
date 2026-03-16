@@ -1,7 +1,46 @@
 import React from 'react';
-import { Alert, Card, Space, Typography, Form, Input, Button, message, InputNumber, Radio, Progress, Table, Tag, Divider } from 'antd';
+import { 
+  Alert, 
+  Card, 
+  Space, 
+  Typography, 
+  Form, 
+  Input, 
+  Button, 
+  message, 
+  InputNumber, 
+  Radio, 
+  Progress, 
+  Table, 
+  Tag, 
+  Divider,
+  Row,
+  Col,
+  Statistic,
+  Avatar,
+  Badge,
+  Timeline,
+  theme
+} from 'antd';
+import { 
+  UserOutlined,
+  WalletOutlined,
+  CrownOutlined,
+  DollarOutlined,
+  RiseOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  SafetyCertificateOutlined,
+  GiftOutlined,
+  ThunderboltOutlined,
+  CalendarOutlined,
+  CheckCircleOutlined,
+  HomeOutlined,
+  StarFilled,
+  AppstoreOutlined
+} from '@ant-design/icons';
 import { useAuth } from '../context/AuthContext';
-import { getMyProfile, updateMyProfile, getWalletSummary, rechargeWallet, getVipPricingSnapshot, getBookingsByUser } from '../services/api';
+import { getMyProfile, updateMyProfile, getWalletSummary, rechargeWallet, getVipPricingSnapshot, getBookingsByUser, checkVipUpgrade } from '../services/api';
 import dayjs from 'dayjs';
 import { getBookingStatusMeta } from '../constants/booking';
 import { DEFAULT_CHECKIN_HOUR, computeStayNights, normalizeStayRange } from '../utils/stayRange';
@@ -40,7 +79,9 @@ function formatPercentValue(value) {
 }
 
 export default function AccountCenter() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshUser } = useAuth();
+  const { token } = theme.useToken();
+  const isDarkMode = token.colorBgBase === '#000000' || token.colorBgBase === '#141414';
   const [profile, setProfile] = React.useState(null);
   const [wallet, setWallet] = React.useState(null);
   const [pricing, setPricing] = React.useState(null);
@@ -49,6 +90,7 @@ export default function AccountCenter() {
   const [loadingPricing, setLoadingPricing] = React.useState(false);
   const [updatingProfile, setUpdatingProfile] = React.useState(false);
   const [recharging, setRecharging] = React.useState(false);
+  const [checkingVip, setCheckingVip] = React.useState(false);
   const [profileForm] = Form.useForm();
   const [rechargeForm] = Form.useForm();
   const [orderSnapshot, setOrderSnapshot] = React.useState([]);
@@ -113,11 +155,41 @@ export default function AccountCenter() {
 
   const acceptedStatusSet = React.useMemo(() => new Set(['CONFIRMED', 'CHECKED_IN']), []);
 
+  // 监听 user 的关键字段变化（vipLevel、username等），当这些字段更新时重新加载 profile
+  // 这样可以在 refreshUser() 被调用后（例如从其他页面切回）自动更新页面显示
+  React.useEffect(() => {
+    if (user?.id && profile?.id && user.id === profile.id) {
+      // 只有当 user 的某些字段与 profile 不一致时才重新加载
+      const needsUpdate = 
+        user.vipLevel !== profile.vipLevel ||
+        user.username !== profile.username;
+      
+      if (needsUpdate) {
+        loadProfile();
+      }
+    }
+  }, [user?.id, user?.vipLevel, user?.username, profile?.id, profile?.vipLevel, profile?.username, loadProfile]);
+
   React.useEffect(() => {
     loadProfile();
     loadWallet();
     loadPricing();
     loadOrderSnapshot();
+    
+    // 监听页面可见性变化，页面重新可见时刷新钱包、订单和个人资料（包含VIP等级）
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadProfile(); // 刷新个人资料以获取最新VIP等级和年度消费
+        loadWallet();
+        loadOrderSnapshot();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [loadOrderSnapshot, loadProfile, loadWallet, loadPricing]);
 
   const onProfileSubmit = async (values) => {
@@ -155,6 +227,28 @@ export default function AccountCenter() {
       message.error(err?.data?.message || '充值失败');
     } finally {
       setRecharging(false);
+    }
+  };
+
+  const handleCheckVipUpgrade = async () => {
+    try {
+      setCheckingVip(true);
+      const result = await checkVipUpgrade();
+      
+      if (result.upgraded) {
+        message.success(`恭喜！您的VIP等级已从 VIP${result.oldLevel} 升级到 VIP${result.newLevel}！`);
+        // 刷新用户信息和个人资料
+        if (refreshUser) {
+          await refreshUser();
+        }
+        await loadProfile();
+      } else {
+        message.info(`当前VIP等级：VIP${result.newLevel}，年度消费：¥${Number(result.yearlyConsumption || 0).toFixed(2)}`);
+      }
+    } catch (err) {
+      message.error(err?.data?.message || 'VIP等级检查失败');
+    } finally {
+      setCheckingVip(false);
     }
   };
 
@@ -339,197 +433,593 @@ export default function AccountCenter() {
   const vipLevel = user?.vipLevel ?? 0;
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Title level={3} style={{ margin: 0 }}>个人中心</Title>
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      {/* 页面标题 */}
+      <div style={{
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        borderRadius: 16,
+        padding: '32px 40px',
+        boxShadow: '0 8px 24px rgba(102, 126, 234, 0.25)',
+      }}>
+        <Space size={16} align="center">
+          <Avatar 
+            size={64} 
+            icon={<UserOutlined />}
+            style={{
+              background: 'linear-gradient(135deg, #ffd700 0%, #ff8c00 100%)',
+              boxShadow: '0 4px 12px rgba(255, 215, 0, 0.4)',
+            }}
+          />
+          <div>
+            <Title level={2} style={{ margin: 0, color: '#fff', fontWeight: 700 }}>
+              {profile?.username || '用户'}的个人中心
+            </Title>
+            <Text style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: 15 }}>
+              管理您的账户信息、钱包和会员权益
+            </Text>
+          </div>
+        </Space>
+      </div>
+
+      {/* 行程提醒 */}
       {upcomingStay && upcomingStay.end && (
         <Alert
           type="info"
           showIcon
-          message="行程提醒"
+          icon={<CalendarOutlined />}
+          message={<Text strong style={{ fontSize: 16 }}>行程提醒</Text>}
           description={(
-            <Space direction="vertical" size={2}>
-              <Text>入住时间：{upcomingStay.start ? upcomingStay.start.format('YYYY-MM-DD HH:mm') : '待定'}</Text>
-              <Text>
-                退房时间：<Text strong>{upcomingStay.end.format('YYYY-MM-DD HH:mm')}</Text>
-              </Text>
+            <Space direction="vertical" size={4} style={{ marginTop: 8 }}>
+              <Space>
+                <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                <Text>入住时间：<Text strong>{upcomingStay.start ? upcomingStay.start.format('YYYY-MM-DD HH:mm') : '待定'}</Text></Text>
+              </Space>
+              <Space>
+                <ThunderboltOutlined style={{ color: '#fa8c16' }} />
+                <Text>退房时间：<Text strong style={{ color: '#fa8c16' }}>{upcomingStay.end.format('YYYY-MM-DD HH:mm')}</Text></Text>
+              </Space>
               <Text type="secondary">当前状态：{getBookingStatusMeta(upcomingStay.status).label}</Text>
             </Space>
           )}
+          style={{
+            borderRadius: 12,
+            border: '1px solid #91d5ff',
+            background: 'linear-gradient(135deg, #f0f9ff 0%, #e6f7ff 100%)',
+          }}
         />
       )}
-      <Space direction="vertical" size={16} style={{ width: '100%' }}>
-        <Card title="基本信息" loading={loadingProfile}>
-          <Form layout="vertical" form={profileForm} onFinish={onProfileSubmit} initialValues={{ username: profile?.username, phone: profile?.phone, email: profile?.email }}>
-            <Form.Item label="用户名" name="username" rules={[{ required: true, message: '请输入用户名' }, { min: 3, message: '至少 3 个字符' }]}>
-              <Input placeholder="请输入用户名" allowClear />
-            </Form.Item>
-            <Form.Item label="联系电话" name="phone" rules={[{ required: true, message: '请输入联系电话' }]}>
-              <Input placeholder="请输入联系电话" allowClear />
-            </Form.Item>
-            <Form.Item label="邮箱" name="email" rules={[{ type: 'email', message: '请输入有效邮箱' }]}>
-              <Input placeholder="可选，填写邮箱" allowClear />
-            </Form.Item>
+
+      {/* 概览卡片 */}
+      <Row gutter={[20, 20]}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card
+            hoverable
+            style={{
+              borderRadius: 16,
+              border: '1px solid #e8e8e8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Statistic
+              title={<Space><WalletOutlined style={{ color: '#1890ff' }} /> 钱包余额</Space>}
+              value={walletBalanceDisplay}
+              prefix="¥"
+              valueStyle={{ color: '#1890ff', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card
+            hoverable
+            style={{
+              borderRadius: 16,
+              border: '1px solid #e8e8e8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Statistic
+              title={<Space><CrownOutlined style={{ color: '#faad14' }} /> 会员等级</Space>}
+              value={`VIP${vipLevel}`}
+              valueStyle={{ color: '#faad14', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card
+            hoverable
+            style={{
+              borderRadius: 16,
+              border: '1px solid #e8e8e8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Statistic
+              title={<Space><RiseOutlined style={{ color: '#52c41a' }} /> 年度消费</Space>}
+              value={profile?.yearlyConsumption || 0}
+              prefix="¥"
+              precision={2}
+              valueStyle={{ color: '#52c41a', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card
+            hoverable
+            style={{
+              borderRadius: 16,
+              border: '1px solid #e8e8e8',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-4px)';
+              e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.12)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.06)';
+            }}
+          >
+            <Statistic
+              title={<Space><CalendarOutlined style={{ color: '#722ed1' }} /> 订单总数</Space>}
+              value={orderSnapshot.length}
+              valueStyle={{ color: '#722ed1', fontWeight: 700 }}
+            />
+          </Card>
+        </Col>
+      </Row>
+
+      <Space direction="vertical" size={20} style={{ width: '100%' }}>
+        {/* 基本信息 */}
+        <Card 
+          title={<Space><UserOutlined /> 基本信息</Space>}
+          loading={loadingProfile}
+          style={{
+            borderRadius: 16,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          }}
+          headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+        >
+          <Form 
+            layout="vertical" 
+            form={profileForm} 
+            onFinish={onProfileSubmit} 
+            initialValues={{ username: profile?.username, phone: profile?.phone, email: profile?.email }}
+          >
+            <Row gutter={16}>
+              <Col xs={24} md={12}>
+                <Form.Item 
+                  label="用户名" 
+                  name="username" 
+                  rules={[{ required: true, message: '请输入用户名' }, { min: 3, message: '至少 3 个字符' }]}
+                >
+                  <Input 
+                    prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
+                    placeholder="请输入用户名" 
+                    allowClear 
+                    size="large"
+                    style={{ borderRadius: 10 }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item 
+                  label="联系电话" 
+                  name="phone" 
+                  rules={[
+                    { required: true, message: '请输入联系电话' },
+                    { 
+                      pattern: /^(1[3-9]\d{9}|\+?[1-9]\d{1,14})$/, 
+                      message: '请输入正确的手机号（国内11位或国际号码）' 
+                    }
+                  ]}
+                >
+                  <Input 
+                    prefix={<PhoneOutlined style={{ color: '#bfbfbf' }} />}
+                    placeholder="请输入手机号（国内11位或国际号码）" 
+                    allowClear 
+                    maxLength={20} 
+                    size="large"
+                    style={{ borderRadius: 10 }}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={12}>
+                <Form.Item label="邮箱" name="email" rules={[{ type: 'email', message: '请输入有效邮箱' }]}>
+                  <Input 
+                    prefix={<MailOutlined style={{ color: '#bfbfbf' }} />}
+                    placeholder="可选，填写邮箱" 
+                    allowClear 
+                    size="large"
+                    style={{ borderRadius: 10 }}
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
             <Form.Item>
-              <Button type="primary" htmlType="submit" loading={updatingProfile}>保存修改</Button>
+              <Button 
+                type="primary" 
+                htmlType="submit" 
+                loading={updatingProfile}
+                size="large"
+                style={{
+                  borderRadius: 10,
+                  fontWeight: 600,
+                  boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)',
+                }}
+              >
+                保存修改
+              </Button>
             </Form.Item>
           </Form>
         </Card>
 
-        <Card title="钱包中心" loading={loadingWallet}>
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+        {/* 钱包中心 */}
+        <Card 
+          title={<Space><WalletOutlined /> 钱包中心</Space>}
+          loading={loadingWallet}
+          style={{
+            borderRadius: 16,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          }}
+          headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+        >
+          <Space direction="vertical" style={{ width: '100%' }} size={20}>
             <div
               style={{
-                background: 'linear-gradient(135deg, #1890ff 0%, #73d13d 100%)',
-                borderRadius: 12,
-                padding: '18px 22px',
+                background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
+                borderRadius: 16,
+                padding: '28px 32px',
                 display: 'flex',
-                alignItems: 'stretch',
+                alignItems: 'center',
                 justifyContent: 'space-between',
                 gap: 24,
                 color: '#fff',
-                flexWrap: 'wrap'
+                flexWrap: 'wrap',
+                boxShadow: '0 8px 24px rgba(24, 144, 255, 0.3)',
               }}
             >
-              <Space direction="vertical" size={6}>
-                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13 }}>可用余额</Text>
-                <Title level={2} style={{ margin: 0, color: '#fff', letterSpacing: 1 }}>¥{walletBalanceDisplay}</Title>
+              <Space direction="vertical" size={8}>
+                <Space size={8}>
+                  <WalletOutlined style={{ fontSize: 24 }} />
+                  <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 15 }}>可用余额</Text>
+                </Space>
+                <Title level={1} style={{ margin: 0, color: '#fff', letterSpacing: 2, fontSize: 48 }}>
+                  ¥{walletBalanceDisplay}
+                </Title>
               </Space>
               <div
                 style={{
-                  minWidth: 160,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',
-                  padding: '12px 16px',
+                  minWidth: 180,
+                  padding: '16px 20px',
                   borderRadius: 12,
-                  background: 'rgba(255,255,255,0.12)',
-                  boxShadow: '0 8px 16px rgba(0,0,0,0.08)'
+                  background: isDarkMode ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(10px)',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                 }}
               >
-                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13 }}>当前会员等级</Text>
-                <Title level={3} style={{ margin: 0, color: '#fff' }}>VIP{vipLevel}</Title>
+                <Space direction="vertical" size={4}>
+                  <Space size={6}>
+                    <CrownOutlined style={{ fontSize: 18, color: '#ffd700' }} />
+                    <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>当前会员等级</Text>
+                  </Space>
+                  <Title level={2} style={{ margin: 0, color: '#fff', fontSize: 32 }}>VIP{vipLevel}</Title>
+                </Space>
               </div>
             </div>
-            <Form layout="inline" form={rechargeForm} onFinish={onRechargeSubmit} initialValues={{ channel: 'ONLINE' }}>
-              <Form.Item label="充值金额" name="amount" rules={[{ required: true, message: '请输入金额' }]}>
-                <InputNumber min={1} precision={2} style={{ width: 160 }} prefix="¥" />
-              </Form.Item>
-              <Form.Item label="渠道" name="channel">
-                <Radio.Group>
-                  <Radio.Button value="ONLINE">在线</Radio.Button>
-                  <Radio.Button value="MANUAL">前台</Radio.Button>
-                  <Radio.Button value="TRANSFER">转账</Radio.Button>
-                </Radio.Group>
-              </Form.Item>
-              <Form.Item label="凭证" name="referenceNo">
-                <Input placeholder="可选" style={{ width: 200 }} />
-              </Form.Item>
-              <Form.Item label="备注" name="remark">
-                <Input placeholder="可选" style={{ width: 200 }} />
-              </Form.Item>
+            
+            <Divider style={{ margin: '8px 0' }} />
+            
+            <Form 
+              layout="vertical" 
+              form={rechargeForm} 
+              onFinish={onRechargeSubmit} 
+              initialValues={{ channel: 'ONLINE' }}
+            >
+              <Row gutter={16}>
+                <Col xs={24} md={8}>
+                  <Form.Item label="充值金额" name="amount" rules={[{ required: true, message: '请输入金额' }]}>
+                    <InputNumber 
+                      min={1} 
+                      precision={2} 
+                      style={{ width: '100%', borderRadius: 10 }} 
+                      prefix={<DollarOutlined />}
+                      size="large"
+                      placeholder="请输入充值金额"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="充值渠道" name="channel">
+                    <Radio.Group size="large" style={{ width: '100%' }}>
+                      <Radio.Button value="ONLINE" style={{ flex: 1, textAlign: 'center' }}>在线支付</Radio.Button>
+                      <Radio.Button value="MANUAL" style={{ flex: 1, textAlign: 'center' }}>前台</Radio.Button>
+                      <Radio.Button value="TRANSFER" style={{ flex: 1, textAlign: 'center' }}>转账</Radio.Button>
+                    </Radio.Group>
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={8}>
+                  <Form.Item label="凭证号码" name="referenceNo">
+                    <Input 
+                      placeholder="可选" 
+                      style={{ width: '100%', borderRadius: 10 }} 
+                      size="large"
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24}>
+                  <Form.Item label="备注信息" name="remark">
+                    <Input.TextArea 
+                      placeholder="可选" 
+                      rows={3}
+                      style={{ borderRadius: 10 }}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
               <Form.Item>
-                <Button type="primary" htmlType="submit" loading={recharging}>立即充值</Button>
+                <Button 
+                  type="primary" 
+                  htmlType="submit" 
+                  loading={recharging}
+                  size="large"
+                  icon={<ThunderboltOutlined />}
+                  style={{
+                    borderRadius: 10,
+                    fontWeight: 600,
+                    height: 48,
+                    fontSize: 16,
+                    boxShadow: '0 4px 12px rgba(24, 144, 255, 0.3)',
+                  }}
+                >
+                  立即充值
+                </Button>
               </Form.Item>
             </Form>
           </Space>
         </Card>
 
-        <Card title="会员优惠策略" loading={loadingPricing}>
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Space size={16} wrap>
+        {/* 会员优惠策略 */}
+        <Card 
+          title={<Space><GiftOutlined /> 会员优惠策略</Space>}
+          extra={
+            <Button 
+              type="primary" 
+              loading={checkingVip} 
+              onClick={handleCheckVipUpgrade}
+              icon={<SafetyCertificateOutlined />}
+              style={{
+                borderRadius: 10,
+                fontWeight: 600,
+              }}
+            >
+              检查VIP升级
+            </Button>
+          }
+          loading={loadingPricing}
+          style={{
+            borderRadius: 16,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          }}
+          headStyle={{ borderBottom: '2px solid #f0f0f0' }}
+        >
+          <Space direction="vertical" size={20} style={{ width: '100%' }}>
+            {profile?.yearlyConsumption != null && (
+              <Alert
+                message={
+                  <Space>
+                    <RiseOutlined />
+                    <Text strong>本年度累计消费：</Text>
+                    <Text strong style={{ color: '#1890ff', fontSize: 18 }}>
+                      ¥{Number(profile.yearlyConsumption || 0).toFixed(2)}
+                    </Text>
+                  </Space>
+                }
+                type="success"
+                style={{
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)',
+                  border: '1px solid #b7eb8f',
+                }}
+              />
+            )}
+            
+            <Row gutter={[16, 16]}>
               {levelDescriptors.map((level) => (
-                <Card key={level.level} size="small" style={{ width: 220 }} hoverable>
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                    <Text strong>{level.name}</Text>
-                    <Progress
-                      type="dashboard"
-                      percent={level.progressPercent}
-                      trailColor="#f0f0f0"
-                      strokeColor={level.level === vipLevel ? '#fa8c16' : '#1677ff'}
-                      status="normal"
-                      format={() => renderPercentLabel(level.percent)}
-                    />
-                    <div
+                <Col xs={24} sm={12} md={8} lg={4} key={level.level}>
+                  <Badge.Ribbon 
+                    text={level.level === vipLevel ? '当前等级' : `目标VIP${level.level}`} 
+                    color={level.level === vipLevel ? '#fa8c16' : '#1890ff'}
+                  >
+                    <Card
+                      hoverable
                       style={{
-                        width: '100%',
-                        background: 'rgba(22, 119, 255, 0.08)',
-                        borderRadius: 12,
-                        padding: '10px 12px',
-                        border: '1px solid rgba(22, 119, 255, 0.16)'
+                        borderRadius: 16,
+                        border: level.level === vipLevel ? '2px solid #fa8c16' : '1px solid #e8e8e8',
+                        boxShadow: level.level === vipLevel 
+                          ? '0 4px 16px rgba(250, 140, 22, 0.25)' 
+                          : '0 2px 8px rgba(0, 0, 0, 0.06)',
+                        transition: 'all 0.3s ease',
+                        background: level.level === vipLevel 
+                          ? 'linear-gradient(135deg, #fff7e6 0%, #ffffff 100%)' 
+                          : '#fff',
+                      }}
+                      bodyStyle={{ padding: '20px' }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-6px)';
+                        e.currentTarget.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.15)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = level.level === vipLevel 
+                          ? '0 4px 16px rgba(250, 140, 22, 0.25)' 
+                          : '0 2px 8px rgba(0, 0, 0, 0.06)';
                       }}
                     >
-                      <Text
-                        style={{
-                          display: 'block',
-                          fontSize: 16,
-                          fontWeight: 600,
-                          color: '#1f1f1f',
-                        }}
-                      >
-                        平均折扣：
-                        <span style={{ color: level.percent >= 100 ? '#fa8c16' : '#1677ff' }}>{renderPercentLabel(level.percent)}</span>
-                      </Text>
-                      <Text
-                        style={{
-                          display: 'block',
-                          marginTop: 6,
-                          fontSize: 15,
-                          fontWeight: 600,
-                          color: '#1f1f1f'
-                        }}
-                      >
-                        退房延长：次日 {String((level.checkoutHour ?? 12)).padStart(2, '0')}:00
-                      </Text>
-                      {level.description && (
-                        <Text
-                          style={{
-                            display: 'block',
-                            marginTop: 8,
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: '#531dab'
+                      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                        <div style={{ textAlign: 'center' }}>
+                          <CrownOutlined style={{ 
+                            fontSize: 32, 
+                            color: level.level === vipLevel ? '#fa8c16' : '#1890ff' 
+                          }} />
+                          <Title level={4} style={{ margin: '8px 0 0', color: level.level === vipLevel ? '#fa8c16' : '#1890ff' }}>
+                            {level.name}
+                          </Title>
+                        </div>
+                        
+                        <Progress
+                          type="circle"
+                          percent={level.progressPercent}
+                          size={120}
+                          strokeColor={{
+                            '0%': level.level === vipLevel ? '#fa8c16' : '#1890ff',
+                            '100%': level.level === vipLevel ? '#ffc069' : '#69c0ff',
                           }}
-                        >
-                          {level.description}
-                        </Text>
-                      )}
-                    </div>
-                  </Space>
-                </Card>
+                          format={() => (
+                            <div style={{ textAlign: 'center' }}>
+                              <div style={{ fontSize: 24, fontWeight: 700, color: level.level === vipLevel ? '#fa8c16' : '#1890ff' }}>
+                                {renderPercentLabel(level.percent)}
+                              </div>
+                              <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 4 }}>平均折扣</div>
+                            </div>
+                          )}
+                        />
+                        
+                        <Divider style={{ margin: '8px 0' }} />
+                        
+                        <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                          <div style={{
+                            background: level.level === vipLevel ? 'rgba(250, 140, 22, 0.1)' : 'rgba(24, 144, 255, 0.08)',
+                            borderRadius: 8,
+                            padding: '10px 12px',
+                            border: level.level === vipLevel ? '1px solid rgba(250, 140, 22, 0.3)' : '1px solid rgba(24, 144, 255, 0.16)',
+                          }}>
+                            <Space size={4}>
+                              <CalendarOutlined style={{ color: level.level === vipLevel ? '#fa8c16' : '#1890ff' }} />
+                              <Text strong style={{ fontSize: 14 }}>
+                                退房延长至次日 {String((level.checkoutHour ?? 12)).padStart(2, '0')}:00
+                              </Text>
+                            </Space>
+                          </div>
+                          {level.description && (
+                            <div style={{
+                              background: isDarkMode ? '#262626' : '#f5f5f5',
+                              borderRadius: 8,
+                              padding: '10px 12px',
+                            }}>
+                              <Text style={{ fontSize: 13, color: '#595959' }}>
+                                {level.description}
+                              </Text>
+                            </div>
+                          )}
+                        </Space>
+                      </Space>
+                    </Card>
+                  </Badge.Ribbon>
+                </Col>
               ))}
-            </Space>
+            </Row>
+            
             <Divider style={{ margin: '12px 0' }} />
-            <Title level={5} style={{ margin: 0 }}>房型折扣 · 各等级一览</Title>
-            <Table
-              rowKey="key"
-              dataSource={roomRows}
-              pagination={false}
-              size="small"
-              columns={[
-                { title: '房型', dataIndex: 'roomName', key: 'roomName' },
-                {
-                  title: '我的等级价格',
-                  dataIndex: 'currentRate',
-                  key: 'currentRate',
-                  render: (value) => value != null ? (
-                    <Tag color="volcano">VIP{vipLevel}：{formatPercentValue(value * 100)}</Tag>
-                  ) : <Tag color="default">暂未定义</Tag>
-                },
-                {
-                  title: '全部等级',
-                  key: 'map',
-                  render: (_, record) => (
-                    <Space size={[4, 4]} wrap>
-                      {Array.from(record.map.entries()).map(([lvl, rate]) => (
-                        <Tag key={lvl} color={Number(lvl) === vipLevel ? 'volcano' : 'default'}>
-                          VIP{lvl}：{formatPercentValue(toRateNumber(rate, 1) * 100)}
-                        </Tag>
-                      ))}
-                    </Space>
-                  )
-                }
-              ]}
-            />
+            
+            <div style={{
+              background: 'linear-gradient(135deg, #fafafa 0%, #ffffff 100%)',
+              borderRadius: 12,
+              padding: '20px',
+              border: '1px solid #e8e8e8',
+            }}>
+              <Title level={5} style={{ margin: '0 0 16px 0' }}>
+                <Space><ThunderboltOutlined style={{ color: '#fa8c16' }} /> 房型折扣 · 各等级一览</Space>
+              </Title>
+              <Table
+                rowKey="key"
+                dataSource={roomRows}
+                pagination={false}
+                size="middle"
+                bordered
+                style={{
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                }}
+                columns={[
+                  { 
+                    title: <Space><HomeOutlined /> 房型</Space>, 
+                    dataIndex: 'roomName', 
+                    key: 'roomName',
+                    render: (text) => <Text strong style={{ fontSize: 14 }}>{text}</Text>
+                  },
+                  {
+                    title: <Space><StarFilled style={{ color: '#fa8c16' }} /> 我的等级价格</Space>,
+                    dataIndex: 'currentRate',
+                    key: 'currentRate',
+                    render: (value) => value != null ? (
+                      <Tag 
+                        color="volcano" 
+                        icon={<CrownOutlined />}
+                        style={{ 
+                          fontSize: 13, 
+                          padding: '4px 12px', 
+                          borderRadius: 8,
+                          fontWeight: 600,
+                        }}
+                      >
+                        VIP{vipLevel}：{formatPercentValue(value * 100)}
+                      </Tag>
+                    ) : <Tag color="default">暂未定义</Tag>
+                  },
+                  {
+                    title: <Space><AppstoreOutlined /> 全部等级</Space>,
+                    key: 'map',
+                    render: (_, record) => (
+                      <Space size={[6, 6]} wrap>
+                        {Array.from(record.map.entries()).map(([lvl, rate]) => (
+                          <Tag 
+                            key={lvl} 
+                            color={Number(lvl) === vipLevel ? 'volcano' : 'blue'}
+                            icon={Number(lvl) === vipLevel ? <CrownOutlined /> : null}
+                            style={{ 
+                              fontSize: 12, 
+                              padding: '2px 10px', 
+                              borderRadius: 6,
+                              fontWeight: Number(lvl) === vipLevel ? 600 : 400,
+                            }}
+                          >
+                            VIP{lvl}：{formatPercentValue(toRateNumber(rate, 1) * 100)}
+                          </Tag>
+                        ))}
+                      </Space>
+                    )
+                  }
+                ]}
+              />
+            </div>
           </Space>
         </Card>
       </Space>
