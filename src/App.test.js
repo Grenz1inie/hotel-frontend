@@ -2,6 +2,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import App from './App';
 import { __setAuthState } from './context/AuthContext';
 
+// Mock ChatBot 组件，避免真实网络请求和副作用
+jest.mock('./components/ChatBot', () => ({
+  __esModule: true,
+  default: () => <div data-testid="chatbot-mock">ChatBot Mock</div>,
+}));
+
 jest.mock('./context/AuthContext', () => {
   const React = require('react');
   const createState = () => ({
@@ -39,10 +45,10 @@ jest.mock('./pages/RoomList', () => ({
 jest.mock('./pages/HotelLanding', () => ({
   __esModule: true,
   default: ({ onEnterRooms }) => (
-    <div>
-      <h1>酒店概览</h1>
-      <button type="button" onClick={onEnterRooms}>进入房间列表</button>
-    </div>
+      <div>
+        <h1>酒店概览</h1>
+        <button type="button" onClick={onEnterRooms}>进入房间列表</button>
+      </div>
   ),
 }));
 
@@ -57,6 +63,12 @@ jest.mock('./pages/Login', () => ({
 }));
 
 jest.mock('./pages/UserDashboard', () => ({
+  __esModule: true,
+  default: () => <h1>我的订单</h1>,
+}));
+
+// 可选：如果 MyOrders 组件被使用，也建议 mock
+jest.mock('./pages/MyOrders', () => ({
   __esModule: true,
   default: () => <h1>我的订单</h1>,
 }));
