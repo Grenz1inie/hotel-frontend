@@ -391,6 +391,10 @@ export async function adjustRoomTotalCount(id, totalCount) {
 	return request(`/rooms/${id}/adjust`, { method: 'PUT', query: { totalCount } });
 }
 
+export async function importRooms(data) {
+	return request('/rooms/import', { method: 'POST', json: true, body: data });
+}
+
 // 房间实例管理
 export async function getRoomInstancesByType(roomTypeId) {
 	return request(`/rooms/room-types/${roomTypeId}/rooms`, { method: 'GET' });

@@ -25,7 +25,7 @@ import {
 	theme,
 } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { getRooms, adjustRoomTotalCount, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, adminListRoomInstances, approveRefund, rejectRefund, getRoomInstancesByType, createRoomInstance, updateRoomInstance, deleteRoomInstance } from '../services/api';
+import { getRooms, confirmBooking, checkoutBooking, adminListBookings, checkinBooking, rejectBooking, deleteBooking, adminListRoomInstances, approveRefund, rejectRefund, getRoomInstancesByType, createRoomInstance, updateRoomInstance, deleteRoomInstance, importRooms } from '../services/api';
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
 import { DownOutlined, ApartmentOutlined, RightOutlined, CompassOutlined } from '@ant-design/icons';
@@ -104,7 +104,6 @@ export default function AdminDemo() {
 	const isDarkMode = token.colorBgBase === '#000000' || token.colorBgBase === '#141414';
 	const [rooms, setRooms] = React.useState([]);
 	const [loading, setLoading] = React.useState(false);
-	const [totalInput, setTotalInput] = React.useState({});
 	const [orders, setOrders] = React.useState(() => ({ ...EMPTY_ORDERS }));
 	const [ordersLoading, setOrdersLoading] = React.useState(false);
 	const [orderFilters, setOrderFilters] = React.useState({});
@@ -118,13 +117,11 @@ export default function AdminDemo() {
 	const [roomTypeInstances, setRoomTypeInstances] = React.useState([]);
 	const [roomManageVisible, setRoomManageVisible] = React.useState(false);
 	const [roomManageLoading, setRoomManageLoading] = React.useState(false);
-	const [editingRoom, setEditingRoom] = React.useState(null);
 	const [roomForm] = Form.useForm();
 	// 订单详情Modal
 	const [selectedOrder, setSelectedOrder] = React.useState(null);
 	const [orderDetailVisible, setOrderDetailVisible] = React.useState(false);
 	const navigate = useNavigate();
-
 
 	const load = React.useCallback(async () => {
 		try {
@@ -162,46 +159,46 @@ export default function AdminDemo() {
 		.map(([value, meta]) => ({ label: meta.label, value })), [resolveStatusPriority]);
 
 	const loadOrders = React.useCallback(async ({ page: overridePage, size: overrideSize, filters, sortBy } = {}) => {
-			try {
-				setOrdersLoading(true);
-				const effectiveFilters = filters !== undefined ? filters : orderFilters;
-				const effectiveSortBy = sortBy !== undefined ? sortBy : orderSortBy;
-				const query = {
-					...effectiveFilters,
-					page: overridePage ?? orders.page,
-					size: overrideSize ?? orders.size,
-					sortBy: effectiveSortBy,
+		try {
+			setOrdersLoading(true);
+			const effectiveFilters = filters !== undefined ? filters : orderFilters;
+			const effectiveSortBy = sortBy !== undefined ? sortBy : orderSortBy;
+			const query = {
+				...effectiveFilters,
+				page: overridePage ?? orders.page,
+				size: overrideSize ?? orders.size,
+				sortBy: effectiveSortBy,
+			};
+			const res = await adminListBookings(query);
+			let next;
+			if (!res) {
+				next = { ...EMPTY_ORDERS, page: query.page, size: query.size };
+			} else if (Array.isArray(res)) {
+				next = {
+					...EMPTY_ORDERS,
+					items: res, // 后端已排序，前端不再排序
+					total: res.length,
+					page: query.page,
+					size: query.size,
 				};
-				const res = await adminListBookings(query);
-				let next;
-				if (!res) {
-					next = { ...EMPTY_ORDERS, page: query.page, size: query.size };
-				} else if (Array.isArray(res)) {
-					next = {
-						...EMPTY_ORDERS,
-						items: res, // 后端已排序，前端不再排序
-						total: res.length,
-						page: query.page,
-						size: query.size,
-					};
-				} else {
-					const items = Array.isArray(res.items) ? res.items : [];
-					next = {
-						...EMPTY_ORDERS,
-						...res,
-						items: items, // 后端已排序，前端不再排序
-						page: res.page ?? query.page,
-						size: res.size ?? query.size,
-					};
-				}
-				setOrders(next);
-			} catch (e) {
-				const msg = e?.data?.message || '订单加载失败';
-				navigate('/error', { state: { status: String(e.status || 500), title: '加载订单失败', subTitle: msg, backTo: '/admin' }, replace: true });
-			} finally {
-				setOrdersLoading(false);
+			} else {
+				const items = Array.isArray(res.items) ? res.items : [];
+				next = {
+					...EMPTY_ORDERS,
+					...res,
+					items: items, // 后端已排序，前端不再排序
+					page: res.page ?? query.page,
+					size: res.size ?? query.size,
+				};
 			}
-		}, [orderFilters, orderSortBy, navigate, orders.page, orders.size]);
+			setOrders(next);
+		} catch (e) {
+			const msg = e?.data?.message || '订单加载失败';
+			navigate('/error', { state: { status: String(e.status || 500), title: '加载订单失败', subTitle: msg, backTo: '/admin' }, replace: true });
+		} finally {
+			setOrdersLoading(false);
+		}
+	}, [orderFilters, orderSortBy, navigate, orders.page, orders.size]);
 
 	const loadRoomInstances = React.useCallback(async (params = {}) => {
 		try {
@@ -230,6 +227,50 @@ export default function AdminDemo() {
 	React.useEffect(() => {
 		loadRoomInstances();
 	}, [loadRoomInstances]);
+
+	// ================== 导出房型 ==================
+	const handleExportRooms = () => {
+		const dataStr = JSON.stringify(rooms, null, 2);
+		const blob = new Blob([dataStr], { type: 'application/json' });
+		const url = URL.createObjectURL(blob);
+		const link = document.createElement('a');
+		link.href = url;
+		link.download = 'rooms_export.json';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+		URL.revokeObjectURL(url);
+		message.success('导出成功');
+	};
+
+	// ================== 导入房型 ==================
+	const handleImportRooms = (e) => {
+		const file = e.target.files[0];
+		if (!file) return;
+		const reader = new FileReader();
+		reader.onload = async (event) => {
+			try {
+				const json = JSON.parse(event.target.result);
+				// 核心修复点：处理前后端数据格式不一致的问题
+				const processedData = json.map(room => ({
+					...room,
+					// 1. 还原前端数组为后端需要的逗号分隔字符串
+					images: Array.isArray(room.images) ? room.images.join(',') : room.images,
+					amenities: Array.isArray(room.amenities) ? room.amenities.join(',') : room.amenities,
+					// 2. 将前端的 boolean (true/false) 转回后端需要的 Integer (1/0)
+					isActive: typeof room.isActive === 'boolean' ? (room.isActive ? 1 : 0) : room.isActive
+				}));
+
+				await importRooms(processedData);
+				message.success('导入成功');
+				load(); // 刷新房型数据
+			} catch (error) {
+				message.error('导入失败：' + (error?.data?.message || '文件解析或网络错误'));
+			}
+		};
+		reader.readAsText(file);
+		e.target.value = null; // 重置 input 以支持重复上传相同文件
+	};
 
 	const roomTypeMap = React.useMemo(() => {
 		const map = new Map();
@@ -274,27 +315,6 @@ export default function AdminDemo() {
 		});
 		return groups;
 	}, [rooms, roomInstances, roomTypeMap]);
-
-	const doAdjust = async (id) => {
-		const v = totalInput[id];
-		if (typeof v !== 'number') {
-			message.warning('请输入有效的总数');
-			return;
-		}
-		try {
-			const res = await adjustRoomTotalCount(id, v);
-			if (!res) {
-				message.error('更新失败');
-			} else {
-				message.success('更新成功');
-				load();
-				loadRoomInstances();
-			}
-		} catch (e) {
-			const msg = e?.data?.message || '更新失败';
-			navigate('/error', { state: { status: String(e.status || 500), title: '更新失败', subTitle: msg, backTo: '/admin' }, replace: true });
-		}
-	};
 
 	const doConfirm = async (id) => {
 		try {
@@ -382,7 +402,7 @@ export default function AdminDemo() {
 			content: (
 				<div>
 					<p>确定要拒绝此退款申请吗？</p>
-					<textarea 
+					<textarea
 						id="reject-refund-reason"
 						placeholder="请说明拒绝原因（可选）"
 						style={{ width: '100%', minHeight: 80, marginTop: 8, padding: 8 }}
@@ -447,12 +467,10 @@ export default function AdminDemo() {
 		setRoomManageVisible(false);
 		setSelectedRoomType(null);
 		setRoomTypeInstances([]);
-		setEditingRoom(null);
 		roomForm.resetFields();
 	};
 
 	const handleAddRoom = () => {
-		setEditingRoom(null);
 		roomForm.resetFields();
 		roomForm.setFieldsValue({ status: 1 }); // 默认空房状态
 		Modal.confirm({
@@ -496,7 +514,6 @@ export default function AdminDemo() {
 	};
 
 	const handleEditRoom = (room) => {
-		setEditingRoom(room);
 		roomForm.setFieldsValue({
 			roomNumber: room.roomNumber,
 			floor: room.floor,
@@ -582,7 +599,7 @@ export default function AdminDemo() {
 		setSelectedOrder(null);
 		setOrderDetailVisible(false);
 	};
-	
+
 	const orderColumns = [
 		{
 			title: '操作',
@@ -591,42 +608,42 @@ export default function AdminDemo() {
 			fixed: 'left',
 			render: (_, record) => {
 				const actionItems = [];
-				
+
 				// PENDING: 待审核 - 可以确认或拒绝
 				if (record.status === 'PENDING') {
 					actionItems.push({ key: 'confirm', label: '确认订单' });
-					actionItems.push({ key: 'reject', label: '拒绝订单' });
+					actionItems.push({ key: 'reject', label: '拒���订单' });
 				}
-				
+
 				// PENDING_CONFIRMATION: 待确认(已支付) - 可以确认入住或拒绝
 				if (record.status === 'PENDING_CONFIRMATION') {
 					actionItems.push({ key: 'confirm', label: '确认入住' });
 					actionItems.push({ key: 'reject', label: '拒绝订单' });
 				}
-				
+
 				// PENDING_PAYMENT: 待到店支付 - 可以确认或取消
 				if (record.status === 'PENDING_PAYMENT') {
 					actionItems.push({ key: 'confirm', label: '确认订单' });
 					actionItems.push({ key: 'reject', label: '取消订单' });
 				}
-				
+
 				// CONFIRMED: 已确认 - 可以办理入住、办理退房
 				if (record.status === 'CONFIRMED') {
 					actionItems.push({ key: 'checkin', label: '办理入住' });
 					actionItems.push({ key: 'checkout', label: '办理退房' });
 				}
-				
+
 				// CHECKED_IN: 已入住 - 只能办理退房
 				if (record.status === 'CHECKED_IN') {
 					actionItems.push({ key: 'checkout', label: '办理退房' });
 				}
-				
+
 				// REFUND_REQUESTED: 退款申请中 - 可以批准或拒绝退款
 				if (record.status === 'REFUND_REQUESTED') {
 					actionItems.push({ key: 'approve-refund', label: '批准退款' });
 					actionItems.push({ key: 'reject-refund', label: '拒绝退款', danger: true });
 				}
-				
+
 				// 所有状态都可以删除（除了已入住的订单）
 				if (record.status !== 'CHECKED_IN') {
 					if (actionItems.length) {
@@ -634,7 +651,7 @@ export default function AdminDemo() {
 					}
 					actionItems.push({ key: 'delete', label: '删除订单', danger: true });
 				}
-				
+
 				const handleMenuClick = ({ key }) => {
 					switch (key) {
 						case 'confirm':
@@ -654,7 +671,6 @@ export default function AdminDemo() {
 							break;
 						case 'reject-refund':
 							doRejectRefund(record.id);
-							break;
 							break;
 						case 'delete':
 							Modal.confirm({
@@ -684,70 +700,70 @@ export default function AdminDemo() {
 				);
 			},
 		},
-		{ 
-			title: '订单ID', 
-			dataIndex: 'id', 
-			key: 'id', 
+		{
+			title: '订单ID',
+			dataIndex: 'id',
+			key: 'id',
 			width: 100,
 			fixed: 'left',
 		},
-		{ 
-			title: '状态', 
-			dataIndex: 'status', 
-			key: 'status', 
+		{
+			title: '状态',
+			dataIndex: 'status',
+			key: 'status',
 			width: 120,
-			sorter: (a, b) => resolveStatusPriority(a?.status) - resolveStatusPriority(b?.status), 
-			defaultSortOrder: 'ascend', 
-			render: s => { 
-				const meta = getBookingStatusMeta(s); 
-				return <Tag color={meta.color}>{meta.label}</Tag>; 
-			} 
+			sorter: (a, b) => resolveStatusPriority(a?.status) - resolveStatusPriority(b?.status),
+			defaultSortOrder: 'ascend',
+			render: s => {
+				const meta = getBookingStatusMeta(s);
+				return <Tag color={meta.color}>{meta.label}</Tag>;
+			}
 		},
-		{ 
-			title: '入住时间', 
-			dataIndex: 'startTime', 
-			key: 'startTime', 
+		{
+			title: '入住时间',
+			dataIndex: 'startTime',
+			key: 'startTime',
 			width: 160,
-			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-' 
+			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
 		},
-		{ 
-			title: '离店时间', 
-			dataIndex: 'endTime', 
-			key: 'endTime', 
+		{
+			title: '离店时间',
+			dataIndex: 'endTime',
+			key: 'endTime',
 			width: 160,
-			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-' 
+			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
 		},
-		{ 
-			title: '金额', 
-			dataIndex: 'amount', 
+		{
+			title: '金额',
+			dataIndex: 'amount',
 			key: 'amount',
 			width: 120,
 			render: v => {
 				if (v == null) return '-';
 				const num = Number(v);
 				return Number.isNaN(num) ? v : `¥${num.toFixed(2)}`;
-			} 
+			}
 		},
-		{ 
-			title: '联系人', 
-			dataIndex: 'contactName', 
+		{
+			title: '联系人',
+			dataIndex: 'contactName',
 			key: 'contactName',
 			width: 120,
-			render: v => v || '—' 
+			render: v => v || '—'
 		},
-		{ 
-			title: '联系电话', 
-			dataIndex: 'contactPhone', 
+		{
+			title: '联系电话',
+			dataIndex: 'contactPhone',
 			key: 'contactPhone',
 			width: 140,
-			render: v => v || '—' 
+			render: v => v || '—'
 		},
-		{ 
-			title: '订单创建时间', 
-			dataIndex: 'createdAt', 
-			key: 'createdAt', 
+		{
+			title: '订单创建时间',
+			dataIndex: 'createdAt',
+			key: 'createdAt',
 			width: 160,
-			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-' 
+			render: v => v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-'
 		},
 	];
 
@@ -811,11 +827,11 @@ export default function AdminDemo() {
 						</Space>
 					</Form.Item>
 				</Form>
-				
+
 				{/* 排序按钮 */}
 				<div style={{ marginTop: 16, marginBottom: 12 }}>
 					<Space>
-						<Button 
+						<Button
 							type={orderSortBy === 'time' ? 'primary' : 'default'}
 							onClick={() => {
 								setOrderSortBy('time');
@@ -824,7 +840,7 @@ export default function AdminDemo() {
 						>
 							查看最新订单
 						</Button>
-						<Button 
+						<Button
 							type={orderSortBy === 'status' ? 'primary' : 'default'}
 							onClick={() => {
 								setOrderSortBy('status');
@@ -835,7 +851,7 @@ export default function AdminDemo() {
 						</Button>
 					</Space>
 				</div>
-				
+
 				<Table
 					rowKey="id"
 					loading={ordersLoading}
@@ -888,9 +904,9 @@ export default function AdminDemo() {
 									}))
 								}}
 							>
-								<Button 
-									className="room-type-nav__trigger" 
-									type="primary" 
+								<Button
+									className="room-type-nav__trigger"
+									type="primary"
 									size="large"
 									icon={<CompassOutlined />}
 								>
@@ -958,32 +974,32 @@ export default function AdminDemo() {
 											</div>
 											<div className="room-type-panel__title-actions">
 												<div className="room-type-panel__metrics">
-												<div className="room-type-panel__metric room-type-panel__metric--progress">
-													<Tooltip title={`已使用 ${total - available} / ${total}`}>
-														<Progress
-															type="dashboard"
-															percent={occupancyRate}
-															size={76}
-															strokeColor={resolveOccupancyStroke(occupancyRatio)}
-															trailColor="rgba(0,0,0,0.08)"
-														/>
-													</Tooltip>
-													<Text type="secondary" className="progress-label">入住率</Text>
-												</div>
-												<div className="room-type-panel__metric-list">
-													<div className="room-type-panel__metric-item">
-														<span className="room-type-panel__metric-label">总房间</span>
-														<span className="room-type-panel__metric-value">{total}</span>
+													<div className="room-type-panel__metric room-type-panel__metric--progress">
+														<Tooltip title={`已使用 ${total - available} / ${total}`}>
+															<Progress
+																type="dashboard"
+																percent={occupancyRate}
+																size={76}
+																strokeColor={resolveOccupancyStroke(occupancyRatio)}
+																trailColor="rgba(0,0,0,0.08)"
+															/>
+														</Tooltip>
+														<Text type="secondary" className="progress-label">入住率</Text>
 													</div>
-													<div className="room-type-panel__metric-item">
-														<span className="room-type-panel__metric-label">空房</span>
-														<span className="room-type-panel__metric-value room-type-panel__metric-value--available">{available}</span>
+													<div className="room-type-panel__metric-list">
+														<div className="room-type-panel__metric-item">
+															<span className="room-type-panel__metric-label">总房间</span>
+															<span className="room-type-panel__metric-value">{total}</span>
+														</div>
+														<div className="room-type-panel__metric-item">
+															<span className="room-type-panel__metric-label">空房</span>
+															<span className="room-type-panel__metric-value room-type-panel__metric-value--available">{available}</span>
+														</div>
+														<div className="room-type-panel__metric-item">
+															<span className="room-type-panel__metric-label">空房率</span>
+															<span className="room-type-panel__metric-value">{availabilityRate}%</span>
+														</div>
 													</div>
-													<div className="room-type-panel__metric-item">
-														<span className="room-type-panel__metric-label">空房率</span>
-														<span className="room-type-panel__metric-value">{availabilityRate}%</span>
-													</div>
-												</div>
 												</div>
 												<Button
 													type="primary"
@@ -1037,7 +1053,7 @@ export default function AdminDemo() {
 													onClick={() => setSelectedRoom(room)}
 													className="room-instance-card"
 													style={{
-														background: isDarkMode 
+														background: isDarkMode
 															? `linear-gradient(135deg, ${hexToRgba(baseColor, 0.22)} 0%, rgba(20, 20, 20, 0.94) 80%)`
 															: `linear-gradient(135deg, ${hexToRgba(baseColor, 0.22)} 0%, rgba(255, 255, 255, 0.94) 80%)`,
 														borderColor: hexToRgba(baseColor, 0.24),
@@ -1095,12 +1111,30 @@ export default function AdminDemo() {
 				)}
 			</Card>
 			<VacancyAnalyticsPanel />
-			<Card title="房型库存管理" style={{ marginTop: 16 }}>
+			<Card
+				title="房型库存管理"
+				style={{ marginTop: 16 }}
+				extra={
+					<Space>
+						<Button onClick={handleExportRooms}>导出房型</Button>
+						<Button type="primary" onClick={() => document.getElementById('import-rooms-upload').click()}>
+							导入房型
+						</Button>
+						<input
+							type="file"
+							id="import-rooms-upload"
+							accept=".json"
+							style={{ display: 'none' }}
+							onChange={handleImportRooms}
+						/>
+					</Space>
+				}
+			>
 				<Row gutter={[16, 16]}>
 					{rooms.map(r => (
 						<Col xs={24} sm={12} md={8} lg={6} key={r.id}>
-							<Card 
-								loading={loading} 
+							<Card
+								loading={loading}
 								hoverable
 								onClick={() => openRoomManage(r)}
 								style={{ cursor: 'pointer' }}
@@ -1122,7 +1156,7 @@ export default function AdminDemo() {
 					))}
 				</Row>
 			</Card>
-			
+
 			{/* 房间实例管理弹窗 */}
 			<Modal
 				open={roomManageVisible}
@@ -1190,8 +1224,8 @@ export default function AdminDemo() {
 								width: 150,
 								render: (_, record) => (
 									<Space>
-										<Button 
-											size="small" 
+										<Button
+											size="small"
 											type="link"
 											onClick={(e) => {
 												e.stopPropagation();
@@ -1200,9 +1234,9 @@ export default function AdminDemo() {
 										>
 											编辑
 										</Button>
-										<Button 
-											size="small" 
-											type="link" 
+										<Button
+											size="small"
+											type="link"
 											danger
 											onClick={(e) => {
 												e.stopPropagation();
@@ -1298,7 +1332,7 @@ export default function AdminDemo() {
 					// 获取关联的名称信息
 					const roomType = roomTypeMap.get(selectedOrder.roomTypeId);
 					const roomInstance = roomInstanceMap.get(selectedOrder.roomId);
-					
+
 					return (
 						<Descriptions column={2} bordered size="small">
 							<Descriptions.Item label="订单ID" span={2}>
