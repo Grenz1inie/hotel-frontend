@@ -672,5 +672,9 @@ export async function getVipPricingSnapshot() {
 
 export async function getRoomVipRates(roomTypeId) {
 	return request(`/pricing/vip/rooms/${roomTypeId}`, { method: 'GET', auth: false, redirectOn401: false });
+<<<<<<< Updated upstream
 
 }
+=======
+}
+>>>>>>> Stashed changes
