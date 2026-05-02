@@ -1,27 +1,29 @@
 const BASE = '/api';
 
-// Build full image URL from relative path - 直接使用前端public目录的图片
+// 获取环境变量中的 OSS 基础路径，如果没有则使用默认降级地址
+const OSS_BASE = process.env.REACT_APP_OSS_BASE_URL || 'https://hotelhotel.oss-cn-beijing.aliyuncs.com';
+
+// Build full image URL from relative path - 直接使用OSS的图片
 export function buildImageUrl(url) {
 	if (!url) return '';
 	// If already a full URL (http:// or https://), return as is
 	if (url.startsWith('http://') || url.startsWith('https://')) {
 		return url;
 	}
-	// 直接返回相对于public目录的路径，不经过后端
-	// 例如：/images/hotels/xinghe-hero.jpg -> /images/hotels/xinghe-hero.jpg
+	// 使用环境变量拼接阿里云OSS图片路径
 	if (url.startsWith('/images/')) {
-		return url;
+		return `${OSS_BASE}${url}`;
 	}
-	// 如果路径以 /images 开头但没有 /，补上
+	// 如果路径以 images 开头但没有 /，补上
 	if (url.startsWith('images/')) {
-		return `/${url}`;
+		return `${OSS_BASE}/${url}`;
 	}
-	// 其他以 / 开头的路径，假定是图片路径
+	// 其他以 / 开头的路径，假定是相对路径拼接 OSS
 	if (url.startsWith('/')) {
-		return url;
+		return `${OSS_BASE}${url}`;
 	}
 	// 否则，假设是相对路径，添加 / 前缀
-	return `/${url}`;
+	return `${OSS_BASE}/${url}`;
 }
 
 function getToken() {
@@ -670,4 +672,5 @@ export async function getVipPricingSnapshot() {
 
 export async function getRoomVipRates(roomTypeId) {
 	return request(`/pricing/vip/rooms/${roomTypeId}`, { method: 'GET', auth: false, redirectOn401: false });
+
 }
