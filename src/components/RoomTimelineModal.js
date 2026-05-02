@@ -22,7 +22,6 @@ import dayjs from 'dayjs';
 import { getRoomOccupancyTimeline, ROOM_TIMELINE_PAGE_LIMIT } from '../services/api';
 import { BOOKING_STATUS_META, getBookingStatusMeta } from '../constants/booking';
 import { getRoomStatusMeta } from '../constants/room';
-import './RoomTimelineModal.css';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
