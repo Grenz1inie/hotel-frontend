@@ -1,9 +1,12 @@
-const DEFAULT_FALLBACK_SRC = 'https://pannellum.org/images/alma.jpg';
+// 获取环境变量中的 OSS 基础路径，如果没有则使用默认降级地址
+const OSS_BASE = process.env.REACT_APP_OSS_BASE_URL || 'https://hotelhotel.oss-cn-beijing.aliyuncs.com';
+
+const DEFAULT_FALLBACK_SRC = `${OSS_BASE}/images/panorama/alma.jpg`;
 
 const VR_LIBRARY = [
   {
     id: 'ocean-suite',
-    src: 'https://pannellum.org/images/bma-1.jpg',
+    src: `${OSS_BASE}/images/panorama/bma-1.jpg`,
     fallbackSrc: DEFAULT_FALLBACK_SRC,
     attribution: 'Pannellum 示例素材 (CC BY-SA 4.0)',
     sourceUrl: 'https://pannellum.org/',
@@ -11,7 +14,7 @@ const VR_LIBRARY = [
   },
   {
     id: 'city-loft',
-    src: 'https://pannellum.org/images/alma.jpg',
+    src: `${OSS_BASE}/images/panorama/alma.jpg`,
     fallbackSrc: DEFAULT_FALLBACK_SRC,
     attribution: 'Pannellum 示例素材 (CC BY-SA 4.0)',
     sourceUrl: 'https://pannellum.org/',
@@ -19,7 +22,7 @@ const VR_LIBRARY = [
   },
   {
     id: 'mountain-retreat',
-    src: 'https://pannellum.org/images/cerro-toco-0.jpg',
+    src: `${OSS_BASE}/images/panorama/cerro-toco-0.jpg`,
     fallbackSrc: DEFAULT_FALLBACK_SRC,
     attribution: 'Pannellum 示例素材 (CC BY-SA 4.0)',
     sourceUrl: 'https://pannellum.org/',
