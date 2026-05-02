@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import "./ChatBot.css";
 import { sendMessageToBot } from "../utils/api";
 
 export default function ChatBot() {
