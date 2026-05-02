@@ -29,7 +29,6 @@ import { getRooms, confirmBooking, checkoutBooking, adminListBookings, checkinBo
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
 import { DownOutlined, ApartmentOutlined, RightOutlined, CompassOutlined } from '@ant-design/icons';
-import './AdminDemo.css';
 import { BOOKING_STATUS_META, getBookingStatusMeta, getPaymentStatusLabel, getPaymentMethodLabel } from '../constants/booking';
 import { getRoomStatusMeta } from '../constants/room';
 import RoomTimelineModal from '../components/RoomTimelineModal';
