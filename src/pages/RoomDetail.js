@@ -6,6 +6,7 @@ import { getRoomById, getImageList, createBooking, getRoomAvailability, getVipPr
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import RoomVRViewer from '../components/RoomVRViewer';
+import RoomAvailabilityStrip from '../components/RoomAvailabilityStrip';
 import { getVrEntry } from '../services/vr';
 import { getBookingStatusMeta, getPaymentMethodLabel } from '../constants/booking';
 import { DEFAULT_CHECKIN_HOUR, normalizeStayRange, computeStayNights, createDefaultStayRange } from '../utils/stayRange';
@@ -850,6 +851,11 @@ export default function RoomDetail({ id, onBack, initialShowVr = false }) {
           </Card>
         </Col>
       </Row>
+
+      {/* 预订时段预览条：登录/不登录均可查看 */}
+      {room && (
+        <RoomAvailabilityStrip roomTypeId={room.id} hotelId={room.hotelId} />
+      )}
 
       {/* 预订标题 */}
       <div style={{

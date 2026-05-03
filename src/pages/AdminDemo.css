@@ -1,3 +1,11 @@
+/* 替代 Ant Design Space vertical，避免其 align-items:center 导致子卡片宽度收缩 */
+.room-type-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+}
+
 .room-instance-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

@@ -610,6 +610,27 @@ export async function getRoomOccupancyTimeline(roomTypeId, { start, end, page = 
 	return normalized;
 }
 
+/**
+ * 查询指定房型某日的预订时段（公开接口，无需登录）。
+ * 仅返回 { roomTypeId, date, totalRooms, periods: [{startTime, endTime}] }，
+ * 不含任何客户敏感信息。
+ *
+ * @param {number} roomTypeId  房型 ID
+ * @param {dayjs|string} date  查询日期（默认今天）
+ * @param {number} [hotelId]   可选酒店 ID
+ */
+export async function getRoomDayAvailability(roomTypeId, date, hotelId) {
+	if (!roomTypeId) return null;
+	const query = {};
+	if (date) {
+		// 统一序列化为 YYYY-MM-DD
+		const d = typeof date === 'string' ? date : date.format('YYYY-MM-DD');
+		query.date = d;
+	}
+	if (hotelId != null) query.hotelId = hotelId;
+	return request(`/rooms/${roomTypeId}/day-availability`, { query });
+}
+
 export async function getBookingDetail(id) {
 	const data = await request(`/bookings/${id}`);
 	return normalizeBooking(data);

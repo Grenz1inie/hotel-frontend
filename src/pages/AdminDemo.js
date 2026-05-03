@@ -29,6 +29,7 @@ import { getRooms, confirmBooking, checkoutBooking, adminListBookings, checkinBo
 import VacancyAnalyticsPanel from '../components/VacancyAnalyticsPanel';
 import dayjs from 'dayjs';
 import { DownOutlined, ApartmentOutlined, RightOutlined, CompassOutlined } from '@ant-design/icons';
+import './AdminDemo.css';
 import { BOOKING_STATUS_META, getBookingStatusMeta, getPaymentStatusLabel, getPaymentMethodLabel } from '../constants/booking';
 import { getRoomStatusMeta } from '../constants/room';
 import RoomTimelineModal from '../components/RoomTimelineModal';
@@ -923,7 +924,7 @@ export default function AdminDemo() {
 				) : groupedRooms.length === 0 ? (
 					<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无房间数据" />
 				) : (
-					<Space direction="vertical" size={24} style={{ width: '100%' }}>
+					<div className="room-type-list">
 						{groupedRooms.map(({ roomType, rooms: typeRooms }) => {
 							const total = typeRooms.length;
 							const available = typeRooms.filter((item) => Number(item.status) === 1).length;
@@ -1106,7 +1107,7 @@ export default function AdminDemo() {
 								</Card>
 							);
 						})}
-					</Space>
+					</div>
 				)}
 			</Card>
 			<VacancyAnalyticsPanel />
