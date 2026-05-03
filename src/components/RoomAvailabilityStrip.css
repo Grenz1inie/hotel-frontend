@@ -102,6 +102,7 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  width: 20px; /* 限制宽度 */
 }
 
 .ras-tick::before {
@@ -113,13 +114,20 @@
 }
 
 .ras-tick__label {
-  font-size: 11px;
+  font-size: 9px; /* 缩小字号以适应 24 小时密集显示 */
   color: rgba(0, 0, 0, 0.55);
   white-space: nowrap;
   display: flex;
   flex-direction: column;
   align-items: center;
   line-height: 1.2;
+}
+
+/* 屏幕较窄时隐藏奇数小时的文字，防止覆盖 */
+@media (max-width: 900px) {
+  .ras-tick:nth-child(2n+1) .ras-tick__label {
+    visibility: hidden;
+  }
 }
 
 /* ---------- 加载 / 错误态 ---------- */

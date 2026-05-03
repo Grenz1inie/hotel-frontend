@@ -7,8 +7,8 @@ import './RoomAvailabilityStrip.css';
 
 const { Text } = Typography;
 
-/** 24 小时时间轴上显示的刻度点 */
-const TICKS = [0, 6, 12, 18, 24];
+/** 24 小时时间轴上显示的刻度点（0-24小时全部显示） */
+const TICKS = Array.from({ length: 25 }, (_, i) => i);
 
 /**
  * 利用区间扫描算法，将预订时间段列表转换为带颜色类型的可视化区段。
@@ -52,7 +52,8 @@ function computeSegments(selectedDate, periods, totalRooms) {
 
   for (const event of events) {
     if (event.time > cursor) {
-      const type = occupancy >= totalRooms && totalRooms > 0 ? 'occupied' : 'available';
+      // 只要有任何预订(occupancy > 0)，就显示为占用状态(红色)
+      const type = occupancy > 0 ? 'occupied' : 'available';
       result.push({
         leftPct: toLeftPct(cursor),
         widthPct: toWidthPct(cursor, event.time),
@@ -65,7 +66,7 @@ function computeSegments(selectedDate, periods, totalRooms) {
 
   // 最后一段剩余区间
   if (cursor < dayEndMs) {
-    const type = occupancy >= totalRooms && totalRooms > 0 ? 'occupied' : 'available';
+    const type = occupancy > 0 ? 'occupied' : 'available';
     result.push({
       leftPct: toLeftPct(cursor),
       widthPct: toWidthPct(cursor, dayEndMs),
