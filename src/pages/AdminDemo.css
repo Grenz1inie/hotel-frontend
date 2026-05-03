@@ -8,9 +8,11 @@
 
 .room-instance-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 28px 24px;
-  align-items: stretch;
+  /* auto-fill 尽可能多填列，每列最小 180px 最大 240px，不无限拉伸 */
+  grid-template-columns: repeat(auto-fill, minmax(180px, 240px));
+  gap: 16px;
+  align-items: start;
+  justify-content: start;
 }
 
 .room-type-panel {
@@ -214,18 +216,18 @@ body[data-theme='dark'] .room-type-panel__status-chip:hover {
 
 .room-instance-card {
   position: relative;
-  border-radius: 18px;
+  border-radius: 16px;
   border: 1px solid rgba(0, 0, 0, 0.06);
-  padding: 22px 24px;
+  padding: 16px 18px;
   text-align: left;
   cursor: pointer;
   transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   background: rgba(255, 255, 255, 0.96);
   color: rgba(0, 0, 0, 0.88);
-  min-height: 240px;
+  min-height: 0;
   height: 100%;
 }
 
@@ -457,18 +459,18 @@ body[data-theme='dark'] .room-type-nav {
 
 @media (max-width: 1200px) {
   .room-instance-grid {
-    gap: 24px;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 220px));
   }
 }
 
 @media (max-width: 768px) {
   .room-instance-grid {
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 200px));
+    gap: 10px;
   }
   .room-instance-card {
-    padding: 18px 20px;
-    border-radius: 16px;
+    padding: 14px 16px;
+    border-radius: 14px;
   }
 }
